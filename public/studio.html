@@ -68,7 +68,6 @@
     <section class="inspector" aria-labelledby="inspector-title">
       <div class="inspector__heading">
         <h2 class="heading" id="inspector-title" data-slot="inspector-title">장면 편집</h2>
-        <span class="text-small">항목별 설정</span>
       </div>
       <div class="tabs" role="tablist" aria-label="항목 종류" id="item-tabs"></div>
       <p class="sub-filter" id="sub-filter"></p>
@@ -77,19 +76,18 @@
         <div class="inspector-card" id="combine-card" hidden>
           <span class="inspector-card__copy text-small">
             <span data-slot="combine-label"></span>
-            <span>원문과 화면해설은 각각 보존</span>
           </span>
           <button class="button button--elevated" type="button" data-pending="AI로 통합">AI로 통합</button>
         </div>
         <div class="inspector-card">
           <span class="inspector-card__copy text-small">
-            <span>재생 음성</span>
+            <span data-slot="voice-heading">재생 음성</span>
             <span data-slot="voice-label"></span>
           </span>
-          <button class="button button--elevated" type="button" data-pending="음성 설정" aria-haspopup="dialog">음성 설정</button>
+          <button class="button button--elevated" id="open-voice" type="button" aria-haspopup="dialog">음성 설정</button>
         </div>
       </div>
-      <button class="stale-button stale-button--block" id="batch-regenerate" type="button" data-pending="일괄 재생성" aria-haspopup="dialog" hidden>
+      <button class="stale-button stale-button--block" id="batch-regenerate" type="button" aria-haspopup="dialog" hidden>
         <img src="/icons/dot-stale.svg" width="6" height="6" alt="">
         <span data-slot="stale-label"></span>
       </button>
@@ -110,7 +108,6 @@
         <span class="text-small" data-slot="now-playing"></span>
       </div>
       <div class="timeline__tools">
-        <span class="text-small">스냅 켜짐</span>
         <button class="button button--elevated" id="timeline-zoom-out" type="button" aria-label="타임라인 축소">−</button>
         <output class="text-small" id="timeline-zoom">100%</output>
         <button class="button button--elevated" id="timeline-zoom-in" type="button" aria-label="타임라인 확대">+</button>
@@ -131,6 +128,117 @@
       </div>
     </div>
   </section>
+
+  <!-- 텍스트 수정 / 화면해설 수정 (Figma 91:1290) -->
+  <dialog class="modal" id="text-modal" aria-labelledby="text-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="text-modal-title" data-slot="text-modal-title">텍스트 수정</h2>
+        <p data-slot="text-modal-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <label class="modal__field">
+        <span class="modal__label" data-slot="text-modal-label">원고 텍스트</span>
+        <textarea class="modal__textarea" name="text" rows="4" maxlength="500" required></textarea>
+      </label>
+      <p class="modal__note" data-slot="text-modal-note">저장 후 음성은 필요한 경우에만 생성할 수 있습니다.</p>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary" type="submit">저장하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 음성 설정 (Figma 91:1546) -->
+  <dialog class="modal" id="voice-modal" aria-labelledby="voice-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="voice-modal-title">음성 설정</h2>
+        <p data-slot="voice-modal-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <label class="modal__field">
+        <span class="modal__label" data-slot="voice-modal-label">화자</span>
+        <select class="modal__select" name="voice"></select>
+      </label>
+      <fieldset class="modal__field">
+        <legend class="modal__label">말하기 속도</legend>
+        <div class="segmented">
+          <label><input type="radio" name="speed" value="-1"><span>0.9×</span></label>
+          <label><input type="radio" name="speed" value="0"><span>1.0×</span></label>
+          <label><input type="radio" name="speed" value="1"><span>1.1×</span></label>
+        </div>
+      </fieldset>
+      <div class="modal__row">
+        <button class="modal__preview" type="button" data-preview="voice">▶&nbsp;&nbsp;<span data-slot="voice-preview">미리 듣기</span></button>
+        <span class="modal__hint" data-slot="voice-current">현재 음성</span>
+      </div>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary" type="submit">적용하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 효과음 설정 (Figma 91:1812) -->
+  <dialog class="modal modal--wide" id="sfx-modal" aria-labelledby="sfx-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="sfx-modal-title">효과음 설정</h2>
+        <p data-slot="sfx-modal-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <label class="modal__field">
+        <span class="modal__label">효과음 프리셋</span>
+        <select class="modal__select" name="preset"></select>
+      </label>
+      <div class="modal__row">
+        <button class="modal__preview" type="button" data-preview="sfx">▶&nbsp;&nbsp;미리 듣기</button>
+        <label class="volume">
+          <input type="range" name="volume" min="0" max="100" step="5" aria-label="볼륨">
+          <output class="modal__hint" data-slot="sfx-volume"></output>
+        </label>
+      </div>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary" type="submit">적용하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 일괄 재생성 확인 (Figma 91:2074) -->
+  <dialog class="modal modal--narrow" id="batch-modal" aria-labelledby="batch-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="batch-modal-title">변경된 항목을 생성할까요?</h2>
+        <p>텍스트는 유지하고 오디오만 새로 생성합니다.</p>
+      </div>
+      <hr class="modal__divider">
+      <ul class="modal__list" id="batch-list"></ul>
+      <p class="modal__estimate" data-slot="batch-estimate"></p>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary modal__button--auto" type="submit" data-slot="batch-submit">생성하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 항목 메뉴 (Figma 91:1281 TTS 재생성 hover menu) -->
+  <div class="item-menu" id="item-menu" role="menu" hidden>
+    <button type="button" role="menuitem" data-menu="regenerate">
+      <span>TTS 재생성</span>
+      <span class="item-menu__hint">텍스트는 그대로, 음성만 새로 생성</span>
+    </button>
+    <hr>
+    <button type="button" role="menuitem" data-menu="revert">
+      <span>원문으로 되돌리기</span>
+      <span class="item-menu__hint" data-slot="menu-original"></span>
+    </button>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 

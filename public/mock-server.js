@@ -31,9 +31,11 @@ const db = {
   sfxCues: [],
   jobs: {},
   voices: [
-    { id: 'nara', name: '나라 · 차분함', gender: 'female', age: 'adult' },
-    { id: 'dain', name: '다인', gender: 'female', age: 'young' },
-    { id: 'jinho', name: '진호', gender: 'male', age: 'young' },
+    { id: 'nara', name: '차분한 내레이터', gender: 'female', age: 'adult', sample_url: null },
+    { id: 'dain', name: '차분한 여성 음성', gender: 'female', age: 'young', sample_url: null },
+    { id: 'mijin', name: '또렷한 여성 음성', gender: 'female', age: 'adult', sample_url: null },
+    { id: 'jinho', name: '밝은 남성 음성', gender: 'male', age: 'young', sample_url: null },
+    { id: 'minsu', name: '낮은 남성 음성', gender: 'male', age: 'adult', sample_url: null },
   ],
   sfxPresets: [
     { tag: 'rain_loop', name: '빗소리 · 반복', category: 'weather' },
@@ -83,6 +85,9 @@ db.lines.push(
   line('ln_08', 'img_05', 1, 'narration', 'ch_narr', '낡은 문이 삐걱 소리를 내며 열렸다.', { x: 0.08, y: 0.1, w: 0.65, h: 0.05 }, 3400, 'ready'),
   line('ln_09', 'img_06', 1, 'narration', 'ch_narr', '그날의 기억이 떠올랐다.', { x: 0.08, y: 0.1, w: 0.5, h: 0.05 }, null, 'pending'),
 );
+// 제안 필드: OCR 원문(original_text). "원문으로 되돌리기" 메뉴에 쓴다. 명세에 없음
+db.lines.find((l) => l.id === 'ln_03').original_text = '민호아?';
+
 db.sfxCues.push(
   { id: 'cu_01', image_id: 'img_01', y_ratio: 0.05, sfx_tag: 'rain_loop', volume: 0.5, duration_ms: 9000, asset_id: 'au_sfx_01', url: null },
   { id: 'cu_02', image_id: 'img_02', y_ratio: 0.8, sfx_tag: 'thunder_near', volume: 0.7, duration_ms: 2500, asset_id: 'au_sfx_02', url: null },
@@ -98,7 +103,19 @@ const STEPS = [
   { step: 'build_cues', seconds: 4 },
 ];
 
+// 재생성 작업: 항목당 약 1초 뒤 대상 대사를 ready로 바꾼다.
+function regenerateJobView(job) {
+  const total = job.line_ids.length;
+  const done = Math.min(total, Math.floor((Date.now() - job.started) / 1000));
+  if (done < total) {
+    return { ...job.base, status: 'running', step: 'dubbing', progress: { done, total }, finished_at: null };
+  }
+  for (const l of db.lines.filter((it) => job.line_ids.includes(it.id))) l.audio.status = 'ready';
+  return { ...job.base, status: 'succeeded', step: 'done', progress: { done: total, total }, finished_at: new Date().toISOString() };
+}
+
 function jobView(job) {
+  if (job.base.kind === 'regenerate') return regenerateJobView(job);
   const elapsed = (Date.now() - job.started) / 1000;
   const episode = db.episodes.find((e) => e.id === job.episode_id);
   const totals = { ocr: episode.image_count, structure: 18, dubbing: 18, build_cues: 1 };
@@ -222,12 +239,42 @@ const routes = [
     return image;
   }],
 
+  ['PATCH', /^\/v1\/characters\/([^/]+)$/, ([id], body) => {
+    const character = db.characters.find((c) => c.id === id) ?? notFound();
+    Object.assign(character, body);
+    // 명세 §6.3: 목소리를 바꾸면 그 인물의 모든 대사가 stale
+    for (const l of db.lines.filter((it) => it.character_id === id)) l.audio.status = 'stale';
+    return character;
+  }],
+  ['PATCH', /^\/v1\/sfx-cues\/([^/]+)$/, ([id], body) => Object.assign(db.sfxCues.find((c) => c.id === id) ?? notFound(), body)],
+  ['POST', /^\/v1\/lines\/([^/]+)\/regenerate$/, ([id]) => {
+    const target = db.lines.find((l) => l.id === id) ?? notFound();
+    target.audio.status = 'ready';
+    // 캐시 적중을 흉내 내 200 + audio로 바로 돌려준다.
+    return { audio: target.audio };
+  }],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/regenerate$/, ([id], body) => {
+    const ids = new Set(imagesOf(id).map((img) => img.id));
+    const lines = db.lines.filter((l) => ids.has(l.image_id));
+    const targets = body.scope === 'lines' ? lines.filter((l) => body.line_ids.includes(l.id))
+      : body.scope === 'all' ? lines : lines.filter((l) => l.audio.status === 'stale');
+    const jobId = newId('job');
+    db.jobs[jobId] = {
+      started: Date.now(),
+      episode_id: id,
+      line_ids: targets.map((l) => l.id),
+      base: { id: jobId, episode_id: id, kind: 'regenerate', error: null, started_at: new Date().toISOString() },
+    };
+    return { job: { id: jobId, kind: 'regenerate', status: 'queued' } };
+  }],
+
   ['GET', /^\/v1\/voices$/, () => ({ items: db.voices, next_cursor: null })],
   ['GET', /^\/v1\/sfx-presets$/, () => ({ items: db.sfxPresets, next_cursor: null })],
 ];
 
 // 페이지를 옮겨도 목 데이터(새 회차, 작업 등)가 이어지도록 탭 세션에 보관한다.
-const STORE_KEY = 'naverwebtoon.mock-db';
+// 목 데이터 구조가 바뀌면 버전을 올려 이전 세션 데이터를 버린다.
+const STORE_KEY = 'naverwebtoon.mock-db.v2';
 try {
   const saved = sessionStorage.getItem(STORE_KEY);
   if (saved) Object.assign(db, JSON.parse(saved).db);
@@ -252,7 +299,7 @@ export function handle(method, path, body) {
       try {
         const result = structuredClone(handler(match.slice(1), body ?? {}));
         persist();
-        return { status: method === 'POST' && /\/process$/.test(pathname) ? 202 : 200, body: result };
+        return { status: method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200, body: result };
       } catch (err) {
         if (err instanceof MockHttpError) return { status: err.status, body: err.body };
         throw err;

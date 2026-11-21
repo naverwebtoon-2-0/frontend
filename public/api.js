@@ -332,6 +332,10 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         kind: l.kind,
         source: l.kind === 'sfx_text' ? 'drawn' : 'manuscript',
         speakerId: l.character_id,
+        characterId: l.character_id ?? (l.kind === 'narration' ? narrator?.id : null),
+        // 제안 필드: OCR 원문. 명세에 없어 없으면 null
+        originalText: l.original_text ?? null,
+        durationMs: l.audio?.duration_ms ?? null,
         text: l.text,
         bbox: l.bbox,
         start: startOf.get(l.id) ?? null,
@@ -353,7 +357,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         type: 'sfx',
         source: 'preset',
         text: presetName.get(cue.sfx_tag) ?? cue.sfx_tag,
-        sfx: { preset: presetName.get(cue.sfx_tag) ?? cue.sfx_tag, volume: Math.round((cue.volume ?? 1) * 100) },
+        sfx: { tag: cue.sfx_tag, preset: presetName.get(cue.sfx_tag) ?? cue.sfx_tag, volume: Math.round((cue.volume ?? 1) * 100) },
         bbox: { x: 0.02, y: cue.y_ratio, w: 0, h: 0 },
         start: startOf.get(cue.id) ?? null,
         ttsStale: false,
@@ -395,6 +399,16 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
     scenes,
     sceneDetails,
     speakers: studio.characters.filter((c) => c.kind !== 'narration').map((c) => ({ id: c.id, name: c.name })),
+    characters: studio.characters.map((c) => ({
+      id: c.id,
+      name: c.name,
+      kind: c.kind ?? 'character',
+      voiceId: c.voice_id,
+      voiceName: voiceName.get(c.voice_id) ?? c.voice_id,
+      speed: c.voice_params?.speed ?? 0,
+    })),
+    voices: voices.map((v) => ({ id: v.id, name: v.name, sampleUrl: v.sample_url ?? null })),
+    presets: presets.map((p) => ({ tag: p.tag, name: p.name, sampleUrl: p.sample_url ?? null })),
     timeline: {
       durationSeconds,
       lastPlayheadSeconds: 0,
@@ -433,7 +447,65 @@ export async function updateLine(lineId, patch) {
   return request(`/v1/lines/${enc(lineId)}`, { method: 'PATCH', body: patch });
 }
 
-/** 장면(이미지) 검수 완료. 명세에 없는 제안 경로: PATCH /v1/episodes/{id}/images/{image_id} { reviewed } */
+/** 이미지 수정. 명세에 없는 제안 경로: PATCH /v1/episodes/{id}/images/{image_id} { reviewed, alt } */
+function updateImage(episodeId, imageId, patch) {
+  return request(`/v1/episodes/${enc(episodeId)}/images/${enc(imageId)}`, { method: 'PATCH', body: patch });
+}
+
+/** 장면(이미지) 검수 완료 */
 export async function completeSceneReview(episodeId, sceneId) {
-  return request(`/v1/episodes/${enc(episodeId)}/images/${enc(sceneId)}`, { method: 'PATCH', body: { reviewed: true } });
+  return updateImage(episodeId, sceneId, { reviewed: true });
+}
+
+/** 화면해설(이미지 설명, alt) 수정 */
+export async function updateImageDescription(episodeId, imageId, alt) {
+  return updateImage(episodeId, imageId, { alt });
+}
+
+/**
+ * 인물 목소리 변경. PATCH /v1/characters/{id}
+ * 그 인물의 모든 대사가 stale이 된다(명세 §6.3).
+ * @param {{ voiceId: string, speed: number }} input speed는 voice_params.speed (-1·0·1로 가정)
+ */
+export async function updateCharacterVoice(characterId, { voiceId, speed }) {
+  return request(`/v1/characters/${enc(characterId)}`, {
+    method: 'PATCH',
+    body: { voice_id: voiceId, voice_params: { speed } },
+  });
+}
+
+/** 효과음 큐 수정. PATCH /v1/sfx-cues/{id} (volume 0~1) */
+export async function updateSfxCue(cueId, { tag, volume }) {
+  return request(`/v1/sfx-cues/${enc(cueId)}`, { method: 'PATCH', body: { sfx_tag: tag, volume: volume / 100 } });
+}
+
+/** 대사 하나 재생성. POST /v1/lines/{id}/regenerate → 200 { audio } 또는 202 { job } */
+export async function regenerateLine(lineId) {
+  const result = await request(`/v1/lines/${enc(lineId)}/regenerate`, { method: 'POST', body: { force: false }, idempotent: true });
+  if (result.job) await waitForJob(result.job.id);
+}
+
+/** stale 대사 일괄 재생성. POST /v1/episodes/{id}/regenerate { scope: "stale" } 후 작업 완료까지 기다린다. */
+export async function regenerateStale(episodeId, onProgress) {
+  const { job } = await request(`/v1/episodes/${enc(episodeId)}/regenerate`, {
+    method: 'POST',
+    body: { scope: 'stale' },
+    idempotent: true,
+  });
+  await waitForJob(job.id, onProgress);
+}
+
+const JOB_POLL_MS = 1000;
+
+/** 작업이 끝날 때까지 GET /v1/jobs/{id}를 조회한다. 실패·취소면 ApiError */
+async function waitForJob(jobId, onProgress) {
+  for (;;) {
+    const job = await request(`/v1/jobs/${enc(jobId)}`);
+    onProgress?.(job.progress ?? null);
+    if (job.status === 'succeeded') return job;
+    if (job.status === 'failed' || job.status === 'canceled') {
+      throw new ApiError(job.error?.message ?? '음성을 다시 만들지 못했습니다.', 0, 'JOB_FAILED');
+    }
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS));
+  }
 }

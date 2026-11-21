@@ -2,6 +2,7 @@
 // 데이터는 api.js의 getStudio()가 명세 §6 응답을 바꿔 준다. 장면 = 원고 이미지 한 장.
 import { completeSceneReview, getScene, getStudio, updateLine } from './api.js';
 import { fillSlots, formatDuration, setProgress } from './common.js';
+import { setupModals } from './studio-modals.js';
 
 const $ = (selector) => document.querySelector(selector);
 const params = new URLSearchParams(location.search);
@@ -23,6 +24,15 @@ const TABS = [
   { key: 'sfx', label: '효과음', types: ['sfx'] },
 ];
 const WAVEFORM = [8, 14, 10, 18, 12, 16, 8, 13];
+// 텍스트 탭의 세부 필터: 나레이션 + 화자별 대사
+const SUB_FILTERS = () => [
+  { key: 'narration', label: '나레이션', match: (i) => i.type === 'narration' },
+  ...state.speakers.map((s) => ({
+    key: s.id,
+    label: `${s.name}_대사`,
+    match: (i) => i.type === 'dialogue' && i.speakerId === s.id,
+  })),
+];
 const PREVIEW_ZOOMS = [50, 75, 100, 125, 150];
 const TIMELINE_ZOOMS = [50, 75, 100, 150, 200];
 
@@ -33,6 +43,7 @@ const state = {
   sceneId: null,
   itemId: null,
   tab: 'all',
+  subFilter: null, // 텍스트 탭 세부 필터: 'narration' 또는 화자 id
   time: 0,
   window: 36,
   playing: false,
@@ -182,23 +193,46 @@ function lineKindOptions() {
 function itemActions(item) {
   if (item.editable === 'cue') {
     return [
-      button('프리셋 변경', 'button', { 'data-pending': '효과음 설정', 'aria-haspopup': 'dialog' }),
-      button('볼륨 조절', 'button', { 'data-pending': '효과음 설정', 'aria-haspopup': 'dialog' }),
+      button('프리셋 변경', 'button', { 'data-action': 'edit-sfx', 'aria-haspopup': 'dialog' }),
+      button('볼륨 조절', 'button', { 'data-action': 'edit-volume', 'aria-haspopup': 'dialog' }),
     ];
   }
   if (item.editable === 'alt') {
-    return [button('설명 수정', 'button', { 'data-pending': '화면해설 수정', 'aria-haspopup': 'dialog' })];
+    return [button('설명 수정', 'button', { 'data-action': 'edit-text', 'aria-haspopup': 'dialog' })];
   }
-  const actions = [button('텍스트 수정', 'button', { 'data-pending': '텍스트 수정', 'aria-haspopup': 'dialog' })];
+  const actions = [button('텍스트 수정', 'button', { 'data-action': 'edit-text', 'aria-haspopup': 'dialog' })];
   if (item.ttsStale) {
-    const stale = button('', 'stale-button', { 'data-pending': 'TTS 재생성' });
+    const stale = button('', 'stale-button', { 'data-action': 'regenerate' });
     const dot = document.createElement('img');
     Object.assign(dot, { src: '/icons/dot-stale.svg', width: 6, height: 6, alt: '' });
     stale.append(dot, 'TTS 재생성');
     actions.push(stale);
   }
-  actions.push(button('⋯', 'more-button', { 'data-pending': '항목 메뉴', 'aria-label': '더 보기' }));
+  actions.push(button('⋯', 'more-button', {
+    'data-action': 'menu',
+    'aria-label': '더 보기',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+  }));
   return actions;
+}
+
+/** 음성 설정 카드: 선택한 항목의 인물(대사는 화자, 그 밖에는 나레이터) 음성 */
+function renderVoiceCard() {
+  const item = state.scene?.items.find((i) => i.id === state.itemId);
+  const characters = state.studio.characters;
+  const character = characters.find((c) => c.id === item?.characterId) ?? characters.find((c) => c.kind === 'narration');
+  fillSlots(document, {
+    'voice-heading': character?.kind === 'narration' || !character ? '재생 음성 · 나레이션' : `재생 음성 · ${character.name}`,
+    'voice-label': character ? `${character.voiceName} · 속도 ${[0.9, 1.0, 1.1][character.speed + 1]?.toFixed(1) ?? '1.0'}×` : '음성 미지정',
+  });
+}
+
+/** 회차 전체의 재생성 대상 수로 일괄 재생성 버튼을 갱신한다. */
+function renderBatchButton() {
+  const count = state.studio.scenes.reduce((sum, scene) => sum + state.studio.sceneDetails[scene.id].items.filter((i) => i.ttsStale).length, 0);
+  $('#batch-regenerate').hidden = count === 0;
+  fillSlots(document, { 'stale-label': `변경된 항목 일괄 재생성 (${count})` });
 }
 
 function renderItem(item) {
@@ -230,44 +264,52 @@ function renderItem(item) {
 
 function renderInspector() {
   const { scene } = state;
-  fillSlots(document, {
-    'inspector-title': `${sceneName(scene.number)} 편집`,
-    'voice-label': scene.voice.label,
-  });
+  fillSlots(document, { 'inspector-title': `${sceneName(scene.number)} 편집` });
+  renderVoiceCard();
 
   $('#item-tabs').replaceChildren(...TABS.map((tab) => {
     const count = scene.items.filter((item) => tab.types.includes(item.type)).length;
-    return button(`${tab.label} ${count}`, 'tab', {
+    const el = button(tab.label, 'tab', {
       role: 'tab',
       'aria-selected': String(tab.key === state.tab),
       'data-tab': tab.key,
     });
+    const badge = document.createElement('span');
+    badge.className = 'tab__count';
+    badge.textContent = count;
+    el.append(badge);
+    return el;
   }));
 
-  const pills = [
-    ['나레이션', scene.items.filter((i) => i.type === 'narration').length],
-    ...state.speakers.map((s) => [`${s.name}_대사`, scene.items.filter((i) => i.type === 'dialogue' && i.speakerId === s.id).length]),
-  ].map(([label, count]) => {
-    const pill = document.createElement('span');
-    pill.className = count ? 'sub-pill' : 'sub-pill sub-pill--empty';
-    pill.textContent = `${label} ${count}`;
-    return pill;
-  });
-  $('#sub-filter').replaceChildren('텍스트 세부 ·', ...pills);
+  // 텍스트 세부 필터: "텍스트" 탭에서만 보이고, 누르면 나레이션·화자별 대사만 남긴다. 다시 누르면 해제.
+  const subFilter = $('#sub-filter');
+  subFilter.hidden = state.tab !== 'text';
+  if (state.tab === 'text') {
+    const chips = SUB_FILTERS().map(({ key, label, match }) => {
+      const count = scene.items.filter(match).length;
+      const chip = button(`${label} ${count}`, count ? 'sub-pill' : 'sub-pill sub-pill--empty', {
+        'data-sub-filter': key,
+        'aria-pressed': String(state.subFilter === key),
+      });
+      chip.disabled = count === 0;
+      return chip;
+    });
+    subFilter.replaceChildren(Object.assign(document.createElement('span'), { textContent: '텍스트 세부 ·' }), ...chips);
+  }
 
   const types = TABS.find((tab) => tab.key === state.tab).types;
-  $('#item-list').replaceChildren(...scene.items.filter((item) => types.includes(item.type)).map(renderItem));
+  const sub = state.tab === 'text' ? SUB_FILTERS().find((f) => f.key === state.subFilter) : null;
+  const visible = scene.items.filter((item) => types.includes(item.type) && (!sub || sub.match(item)));
+  $('#item-list').replaceChildren(...visible.map(renderItem));
 
   const narration = scene.items.find((i) => i.type === 'narration');
   const description = scene.items.find((i) => i.type === 'description');
   $('#combine-card').hidden = !(narration && description);
   if (narration && description) {
-    fillSlots(document, { 'combine-label': `${narration.number}번과 ${description.number}번을 하나의 내레이션으로` });
+    fillSlots(document, { 'combine-label': `${narration.number}·${description.number}번 내레이션 합치기` });
   }
 
-  const staleCount = scene.items.filter((i) => i.ttsStale).length;
-  $('#batch-regenerate').hidden = staleCount === 0;
-  fillSlots(document, { 'stale-label': `변경된 항목 일괄 재생성 (${staleCount})` });
+  renderBatchButton();
 
   const current = state.studio.scenes.find((s) => s.id === state.sceneId);
   const done = current?.status === 'done';
@@ -282,7 +324,11 @@ function selectItem(itemId) {
     else el.removeAttribute('aria-current');
   }
   renderClipsCurrent();
+  renderVoiceCard();
 }
+
+let modals;
+const currentItem = (itemId = state.itemId) => state.scene?.items.find((i) => i.id === itemId);
 
 async function selectScene(sceneId, { keepItem = false } = {}) {
   state.sceneId = sceneId;
@@ -296,6 +342,7 @@ async function selectScene(sceneId, { keepItem = false } = {}) {
   if (!keepItem || !state.scene.items.some((i) => i.id === state.itemId)) {
     state.itemId = state.scene.items[0]?.id ?? null;
     state.tab = 'all';
+    state.subFilter = null;
   }
   const url = new URL(location.href);
   url.searchParams.set('scene', sceneId);
@@ -476,23 +523,45 @@ function bindEvents() {
     if (card && card.dataset.sceneId !== state.sceneId) void selectScene(card.dataset.sceneId);
   });
 
+  $('#sub-filter').addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-sub-filter]');
+    if (!chip || chip.disabled) return;
+    state.subFilter = state.subFilter === chip.dataset.subFilter ? null : chip.dataset.subFilter;
+    renderInspector();
+  });
+
   $('#item-tabs').addEventListener('click', (event) => {
     const tab = event.target.closest('[data-tab]');
     if (!tab) return;
     state.tab = tab.dataset.tab;
+    state.subFilter = null;
     renderInspector();
   });
 
   $('#item-list').addEventListener('click', (event) => {
-    const item = event.target.closest('[data-item-id]');
-    if (!item || event.target.closest('select')) return;
-    selectItem(item.dataset.itemId);
-    if (event.target.closest('[data-action="play"]')) {
-      const clip = allClips().find((c) => c.itemId === item.dataset.itemId);
-      if (clip) seek(clip.start);
-      setPlaying(true);
+    const el = event.target.closest('[data-item-id]');
+    if (!el || event.target.closest('select')) return;
+    selectItem(el.dataset.itemId);
+    const item = currentItem(el.dataset.itemId);
+    const trigger = event.target.closest('[data-action]');
+    switch (trigger?.dataset.action) {
+      case 'play': {
+        const clip = allClips().find((c) => c.itemId === item.id);
+        if (clip) seek(clip.start);
+        setPlaying(true);
+        break;
+      }
+      case 'edit-text': modals.openText(item); break;
+      case 'edit-sfx': modals.openSfx(item); break;
+      case 'edit-volume': modals.openSfx(item, { focusVolume: true }); break;
+      case 'regenerate': void modals.regenerate(item, trigger); break;
+      case 'menu': modals.openMenu(item, trigger); break;
+      default: break;
     }
   });
+
+  $('#open-voice').addEventListener('click', () => modals.openVoice(currentItem()));
+  $('#batch-regenerate').addEventListener('click', () => modals.openBatch());
 
   $('#item-list').addEventListener('change', (event) => {
     const select = event.target.closest('[data-field="kind"]');
@@ -562,7 +631,7 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.code !== 'Space' || event.target.closest('button, select, input, textarea')) return;
+    if (event.code !== 'Space' || event.target.closest('button, select, input, textarea, dialog')) return;
     event.preventDefault();
     setPlaying(!state.playing);
   });
@@ -571,6 +640,7 @@ function bindEvents() {
 // ── 시작 ─────────────────────────────────────────────
 
 async function init() {
+  modals = setupModals({ state, episodeId, reload: reloadStudio, toast, sceneName, itemLabel });
   bindEvents();
   if (!episodeId) {
     toast('편집할 회차를 찾을 수 없습니다.');

@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": "24.x" },
   "scripts": {
-    "check": "node --check public/status.js && node --check public/api.js && node --check public/mock-server.js && node --check public/common.js && node --check public/dashboard.js && node --check public/upload.js && node --check public/processing.js && node --check public/studio.js && node --check scripts/build.mjs",
+    "check": "node --check public/status.js && node --check public/api.js && node --check public/mock-server.js && node --check public/common.js && node --check public/dashboard.js && node --check public/upload.js && node --check public/processing.js && node --check public/studio.js && node --check public/studio-modals.js && node --check scripts/build.mjs",
     "build": "node scripts/build.mjs"
   }
 }
