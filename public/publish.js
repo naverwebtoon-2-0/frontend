@@ -1,4 +1,4 @@
-// A5 게시 전 검수: 독자 화면 미리보기 + 게시 전 확인 + 경고 상세 · 게시 확인 · 게시 완료
+// A5 게시 전 확인: 독자 화면 미리보기 + 게시 전 확인 + 경고 상세 · 게시 확인 · 게시 완료
 // 검수 항목은 스튜디오 데이터(getStudio)로 계산한다. 명세상 필수는 "음성이 최신 상태"뿐이다(§8: stale이면 409).
 import { getPublishPreview, getStudio, publishEpisode } from './api.js';
 import { episodeLabel, fillSlots, formatDuration, renderHeader } from './common.js';

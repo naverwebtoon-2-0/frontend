@@ -20,7 +20,7 @@ const studioHref = (episodeId) => `/studio?episode=${encodeURIComponent(episodeI
 function actionHref(episode) {
   if (episode.status === 'review_required') return studioHref(episode.id);
   if (episode.status === 'draft' || episode.status === 'failed') return `/upload?episode=${encodeURIComponent(episode.id)}`;
-  return `#episode-${episode.id}`;
+  return null;
 }
 
 function renderEpisodes(episodes) {
@@ -35,7 +35,17 @@ function renderEpisodes(episodes) {
       action: status.action,
     });
     row.querySelector('[data-slot="duration"]').hidden = episode.durationSeconds == null;
-    row.querySelector('[data-slot="action"]').href = actionHref(episode);
+    row.dataset.status = episode.status;
+    const action = row.querySelector('[data-slot="action"]');
+    const href = actionHref(episode);
+    if (href) {
+      action.href = href;
+    } else {
+      action.removeAttribute('href');
+      action.setAttribute('aria-disabled', 'true');
+      action.classList.add('episode-row__action--pending');
+      action.textContent = `${status.label === '게시 완료' ? '통계' : '진행 보기'} 준비 중`;
+    }
     return row;
   });
   document.querySelector('#recent-episodes').replaceChildren(...rows);
@@ -54,6 +64,9 @@ function render({ stats, currentWork, recentEpisodes }) {
     'work-meta': currentWork.meta,
     'review-label': !review ? '검수할 회차 없음' : review.progress == null ? `${review.episodeNumber}화 검수 대기` : `${review.episodeNumber}화 검수 진행률`,
     'review-percent': review?.progress == null ? '' : `${review.progress}%`,
+    'review-detail': !review
+      ? '현재 검수할 회차가 없습니다.'
+      : '장면과 음성을 확인한 뒤 게시 전 확인을 완료하세요.',
   });
 
   // 검수 진행률은 명세에 아직 없어 값이 있을 때만 막대를 보인다.
@@ -61,9 +74,17 @@ function render({ stats, currentWork, recentEpisodes }) {
   bar.hidden = review?.progress == null;
   if (review?.progress != null) setProgress(bar, review.progress);
 
-  const reviewLink = document.querySelector('#review-link');
-  reviewLink.hidden = !review;
-  if (review) reviewLink.href = studioHref(review.episodeId);
+  const primaryAction = document.querySelector('#dashboard-primary-action');
+  if (review) {
+    const href = studioHref(review.episodeId);
+    primaryAction.href = href;
+    primaryAction.textContent = `${review.episodeNumber}화 검수 계속하기`;
+    primaryAction.setAttribute('aria-label', `${review.episodeNumber}화 검수 계속하기`);
+  } else {
+    primaryAction.href = '/upload';
+    primaryAction.textContent = '＋ 새 회차 업로드';
+    primaryAction.setAttribute('aria-label', '새 회차 업로드');
+  }
 
   renderEpisodes(recentEpisodes);
 }

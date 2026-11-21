@@ -24,7 +24,9 @@
     </div>
     <div class="studio-header__actions">
       <span class="text-small" data-slot="saved-at" aria-live="polite"></span>
-      <button class="button button--elevated" type="button" data-pending="독자처럼 듣기">독자처럼 듣기</button>
+      <button class="button button--elevated feature-button" type="button" disabled aria-label="독자처럼 듣기, 준비 중">
+        독자처럼 듣기 <span class="feature-status" aria-hidden="true">준비 중</span>
+      </button>
       <button class="button button--elevated" id="save-draft" type="button">임시 저장</button>
       <a class="button button--primary" id="publish-review" href="#publish-review">게시 전 확인</a>
     </div>
@@ -73,12 +75,14 @@
       <div class="tabs" role="tablist" aria-label="항목 종류" id="item-tabs"></div>
       <p class="sub-filter" id="sub-filter"></p>
       <div class="inspector__scroll">
-        <ol class="item-list" id="item-list" role="tabpanel"></ol>
+        <ol class="item-list" id="item-list" role="tabpanel" aria-labelledby="item-tab-all"></ol>
         <div class="inspector-card inspector-card--suggest" id="combine-card" hidden>
           <span class="inspector-card__copy text-small">
             <span data-slot="combine-label"></span>
           </span>
-          <button class="button button--suggest" type="button" data-pending="AI로 통합">AI로 통합</button>
+          <button class="button button--suggest feature-button" type="button" disabled aria-label="AI로 통합, 준비 중">
+            AI로 통합 <span class="feature-status" aria-hidden="true">준비 중</span>
+          </button>
         </div>
       </div>
       <button class="stale-button stale-button--block" id="batch-regenerate" type="button" aria-haspopup="dialog" hidden>
@@ -106,7 +110,9 @@
         <output class="text-small" id="timeline-zoom">100%</output>
         <button class="button button--elevated" id="timeline-zoom-in" type="button" aria-label="타임라인 확대">+</button>
         <button class="button button--elevated" id="timeline-collapse" type="button" aria-expanded="true" aria-controls="timeline-body">접기</button>
-        <button class="button button--elevated" type="button" data-pending="전체 미리 듣기">전체 미리 듣기</button>
+        <button class="button button--elevated feature-button" type="button" disabled aria-label="전체 미리 듣기, 준비 중">
+          전체 미리 듣기 <span class="feature-status" aria-hidden="true">준비 중</span>
+        </button>
       </div>
     </div>
     <div class="timeline__body" id="timeline-body">

@@ -259,8 +259,11 @@ function renderInspector() {
   $('#item-tabs').replaceChildren(...TABS.map((tab) => {
     const count = scene.items.filter((item) => tab.types.includes(item.type)).length;
     const el = button(tab.label, 'tab', {
+      id: `item-tab-${tab.key}`,
       role: 'tab',
       'aria-selected': String(tab.key === state.tab),
+      'aria-controls': 'item-list',
+      tabindex: tab.key === state.tab ? '0' : '-1',
       'data-tab': tab.key,
     });
     const badge = document.createElement('span');
@@ -289,7 +292,9 @@ function renderInspector() {
   const types = TABS.find((tab) => tab.key === state.tab).types;
   const sub = state.tab === 'text' ? SUB_FILTERS().find((f) => f.key === state.subFilter) : null;
   const visible = scene.items.filter((item) => types.includes(item.type) && (!sub || sub.match(item)));
-  $('#item-list').replaceChildren(...visible.map(renderItem));
+  const panel = $('#item-list');
+  panel.setAttribute('aria-labelledby', `item-tab-${state.tab}`);
+  panel.replaceChildren(...visible.map(renderItem));
 
   const narration = scene.items.find((i) => i.type === 'narration');
   const description = scene.items.find((i) => i.type === 'description');
@@ -302,8 +307,13 @@ function renderInspector() {
 
   const current = state.studio.scenes.find((s) => s.id === state.sceneId);
   const done = current?.status === 'done';
-  $('#complete-review').disabled = done;
-  $('#complete-review').textContent = done ? '검수 완료된 장면' : '이 장면 검수 완료';
+  const staleCount = scene.items.filter((item) => item.ttsStale).length;
+  const completeReview = $('#complete-review');
+  completeReview.disabled = done || staleCount > 0;
+  completeReview.textContent = done
+    ? '검수 완료된 장면'
+    : staleCount ? '음성 재생성 후 검수 완료' : '이 장면 검수 완료';
+  completeReview.title = staleCount ? `변경된 항목 ${staleCount}개의 음성을 재생성한 뒤 검수를 완료할 수 있습니다.` : '';
 }
 
 function selectItem(itemId) {
@@ -313,6 +323,7 @@ function selectItem(itemId) {
     else el.removeAttribute('aria-current');
   }
   renderClipsCurrent();
+  updatePlayback();
 }
 
 let modals;
@@ -446,18 +457,22 @@ function activeClip() {
     .sort((a, b) => b.start - a.start)[0];
 }
 
+function itemContext(itemId) {
+  const scene = state.studio.scenes.find((candidate) => state.studio.sceneDetails[candidate.id]?.items.some((item) => item.id === itemId));
+  const item = scene && state.studio.sceneDetails[scene.id].items.find((candidate) => candidate.id === itemId);
+  return item ? { scene, item } : null;
+}
+
 function updatePlayback() {
   const { durationSeconds } = state.studio.timeline;
   $('#playhead').style.left = percent(state.time);
   // 맨 앞에서는 시간 표시가 레인 밖으로 잘리지 않게 오른쪽으로 붙인다.
   $('#playhead').classList.toggle('playhead--start', state.time / state.window < 0.03);
-  const clip = activeClip();
-  const scene = clip && state.studio.scenes.find((s) => state.studio.sceneDetails[s.id]?.items.some((i) => i.id === clip.itemId));
-  const item = scene && state.studio.sceneDetails[scene.id].items.find((i) => i.id === clip.itemId);
+  const current = state.playing ? itemContext(activeClip()?.itemId) : itemContext(state.itemId);
   fillSlots(document, {
     time: `${formatDuration(state.time)} / ${formatDuration(durationSeconds)}`,
     'playhead-time': formatDuration(state.time),
-    'now-playing': item ? `${sceneName(scene.number)} · 항목 ${item.number} ${state.playing ? '재생 중' : '선택됨'}` : '',
+    'now-playing': current ? `${sceneName(current.scene.number)} · 항목 ${current.item.number} ${state.playing ? '재생 중' : '선택됨'}` : '',
   });
   $('#timeline-play').setAttribute('aria-pressed', String(state.playing));
   $('#timeline-play').setAttribute('aria-label', state.playing ? '일시정지' : '재생');
@@ -497,15 +512,6 @@ function step(list, current, direction) {
 }
 
 function bindEvents() {
-  // 아직 만들지 않은 화면(모달)으로 이어지는 버튼
-  document.addEventListener('click', (event) => {
-    const pending = event.target.closest('[data-pending]');
-    if (pending) {
-      event.stopPropagation();
-      toast(`‘${pending.dataset.pending}’ 화면은 다음 단계에서 연결됩니다.`);
-    }
-  }, true);
-
   $('#scene-list').addEventListener('click', (event) => {
     const card = event.target.closest('[data-scene-id]');
     if (card && card.dataset.sceneId !== state.sceneId) void selectScene(card.dataset.sceneId);
@@ -521,9 +527,19 @@ function bindEvents() {
   $('#item-tabs').addEventListener('click', (event) => {
     const tab = event.target.closest('[data-tab]');
     if (!tab) return;
-    state.tab = tab.dataset.tab;
-    state.subFilter = null;
-    renderInspector();
+    selectTab(tab.dataset.tab);
+  });
+
+  $('#item-tabs').addEventListener('keydown', (event) => {
+    const tab = event.target.closest('[role="tab"]');
+    if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...$('#item-tabs').querySelectorAll('[role="tab"]')];
+    const current = tabs.indexOf(tab);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+        : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    selectTab(tabs[next].dataset.tab, { focus: true });
   });
 
   $('#item-list').addEventListener('click', (event) => {
@@ -565,6 +581,10 @@ function bindEvents() {
   });
 
   $('#complete-review').addEventListener('click', async () => {
+    if (state.scene.items.some((item) => item.ttsStale)) {
+      toast('변경된 항목의 음성을 재생성한 뒤 검수를 완료할 수 있습니다.');
+      return;
+    }
     $('#complete-review').disabled = true;
     try {
       await completeSceneReview(episodeId, state.sceneId);
@@ -622,6 +642,13 @@ function bindEvents() {
     event.preventDefault();
     setPlaying(!state.playing);
   });
+}
+
+function selectTab(tab, { focus = false } = {}) {
+  state.tab = tab;
+  state.subFilter = null;
+  renderInspector();
+  if (focus) document.getElementById(`item-tab-${tab}`)?.focus();
 }
 
 // ── 시작 ─────────────────────────────────────────────

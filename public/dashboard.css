@@ -1,0 +1,256 @@
+/* A1 작가 대시보드 전용 조정: 제목 크기를 낮추고 보조 정보는 흐리게 해 위계를 분명히 한다. */
+
+.dashboard .author-main {
+  max-width: 1220px;
+}
+
+.dashboard .page-heading__copy p,
+.dashboard .panel__copy .text-small,
+.dashboard .stat-card > span,
+.dashboard .episode-row__title .text-small {
+  color: var(--studio-text-secondary);
+}
+
+/* 제작 지표: 세 칸이 줄 너비를 나눠 쓴다. */
+.dashboard .stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard .stat-card {
+  width: auto;
+  height: auto;
+  gap: 6px;
+  padding: var(--space-400) var(--space-600);
+}
+
+.dashboard .stat-card__value {
+  color: var(--studio-text-primary);
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+
+/* 패널 제목: 32px → 작품명 20px, 섹션 제목 18px */
+.dashboard .panel {
+  gap: var(--space-400);
+}
+
+.dashboard #project-title {
+  font-size: 20px;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.dashboard #recent-title {
+  font-size: 18px;
+  font-weight: var(--weight-strong);
+  line-height: 1.3;
+}
+
+.dashboard .panel__header {
+  align-items: center;
+}
+
+.dashboard .panel__header .button {
+  padding: var(--space-200) var(--space-300);
+  border-color: var(--studio-border-default);
+  font-size: var(--text-small);
+}
+
+.dashboard .panel__header .link {
+  color: var(--studio-text-secondary);
+}
+
+.dashboard .progress__copy {
+  align-items: center;
+  gap: var(--space-300);
+}
+
+.dashboard .progress__copy > :first-child {
+  margin-right: auto;
+}
+
+.dashboard .current-task__detail {
+  color: var(--studio-text-secondary);
+}
+
+.dashboard .work-episodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-200);
+  margin-top: var(--space-200);
+  padding-top: var(--space-400);
+  border-top: 1px solid var(--studio-border-default);
+}
+
+.dashboard .episode-row {
+  height: 60px;
+  padding: 0 var(--space-200);
+  border-radius: var(--radius-100);
+}
+
+.dashboard .episode-row:last-child {
+  border-bottom: 0;
+}
+
+.dashboard .episode-row:hover {
+  background: var(--studio-bg-elevated);
+}
+
+.dashboard .episode-row__title {
+  gap: 2px;
+}
+
+.dashboard .episode-row__name {
+  font-size: 15px;
+}
+
+.dashboard .episode-row__status [data-slot="status"] {
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--studio-bg-hover);
+  color: var(--studio-text-secondary);
+  font-size: 12px;
+}
+
+.dashboard .episode-row[data-status="review_required"] [data-slot="status"] {
+  background: rgba(242, 166, 90, 0.14);
+  color: var(--track-dialogue);
+}
+
+.dashboard .episode-row[data-status="processing"] [data-slot="status"] {
+  background: rgba(92, 141, 255, 0.14);
+  color: var(--track-narration);
+}
+
+.dashboard .episode-row[data-status="published"] [data-slot="status"] {
+  background: rgba(5, 214, 134, 0.12);
+  color: var(--clova-green);
+}
+
+.dashboard .episode-row[data-status="failed"] [data-slot="status"] {
+  background: rgba(255, 138, 128, 0.14);
+  color: #ff8a80;
+}
+
+.dashboard .episode-row__status a {
+  min-width: 72px;
+  color: var(--studio-text-secondary);
+  text-align: right;
+}
+
+.dashboard .episode-row[data-status="review_required"] .episode-row__status a {
+  color: var(--clova-green);
+  font-weight: var(--weight-strong);
+}
+
+.dashboard .episode-row__action--pending,
+.dashboard .nav-pending,
+.dashboard .nav-item--pending {
+  color: var(--studio-text-muted);
+}
+
+.dashboard .episode-row__action--pending {
+  min-width: 72px;
+  text-align: right;
+}
+
+.dashboard .nav-item--pending {
+  display: flex;
+  justify-content: space-between;
+  cursor: not-allowed;
+}
+
+.dashboard .nav-item--pending small {
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .dashboard .app-header {
+    height: auto;
+    min-height: 64px;
+  }
+
+  .dashboard .author-layout {
+    display: block;
+  }
+
+  .dashboard .author-sidebar {
+    display: grid;
+    grid-template-columns: auto repeat(5, max-content);
+    align-items: center;
+    min-height: auto;
+    padding: var(--space-300) var(--space-400);
+    overflow-x: auto;
+  }
+
+  .dashboard .author-sidebar ul {
+    display: contents;
+  }
+
+  .dashboard .author-sidebar__label {
+    margin-right: var(--space-200);
+  }
+
+  .dashboard .nav-item {
+    padding: var(--space-200) var(--space-300);
+    white-space: nowrap;
+  }
+
+  .dashboard .nav-item--pending {
+    display: block;
+  }
+
+  .dashboard .nav-item--pending small {
+    display: none;
+  }
+
+  .dashboard .author-main {
+    padding: var(--space-600);
+  }
+}
+
+@media (max-width: 620px) {
+  .dashboard .app-header,
+  .dashboard .page-heading,
+  .dashboard .panel__header,
+  .dashboard .progress__copy,
+  .dashboard .episode-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard .app-header,
+  .dashboard .page-heading {
+    gap: var(--space-300);
+    padding: var(--space-400);
+  }
+
+  .dashboard .app-header__account {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .dashboard .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard .stat-card {
+    min-height: 104px;
+  }
+
+  .dashboard .progress__copy {
+    gap: var(--space-200);
+  }
+
+  .dashboard .episode-row {
+    height: auto;
+    padding: var(--space-300) var(--space-200);
+  }
+
+  .dashboard .episode-row__status {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
