@@ -1,5 +1,5 @@
 // R3 웹툰 감상 플레이어: 화면해설과 대사를 순서대로 재생하고, 장면 이미지와 자막을 함께 보여 준다.
-// 음원 URL(audio_url)이 아직 없어 재생 위치만 움직인다. 음원이 오면 큐마다 <audio>를 재생하면 된다.
+// 큐의 audio_url이 있으면 종류별 볼륨·속도를 적용해 실제 음원을 재생한다.
 import { getPublicEpisode } from './api.js';
 import { episodeLabel, fillSlots, formatDuration } from './common.js';
 import { applyPreferences, getProgress, getSettings, saveProgress } from './reader-store.js';
@@ -23,6 +23,8 @@ const state = {
   sceneIndex: 0,
   lastSaved: 0,
   autoNextTimer: null,
+  audioTracks: new Map(),
+  audioErrorReported: false,
 };
 
 let toastTimer;
@@ -32,6 +34,61 @@ function toast(message) {
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 2500);
+}
+
+function announce(message) {
+  $('#playback-status').textContent = message;
+}
+
+function audioVolume(cue) {
+  const key = `${cue.kind}Volume`;
+  return Math.max(0, Math.min(1, (state.settings[key] ?? 100) / 100));
+}
+
+function hasAudio() {
+  return state.episode?.cues.some((cue) => Boolean(cue.audioUrl)) ?? false;
+}
+
+function updateAudioStatus() {
+  $('#audio-status').textContent = hasAudio()
+    ? '음원 재생 가능 · 재생 속도와 종류별 볼륨 설정이 적용됩니다.'
+    : '이 회차는 음원이 준비되지 않아 자막과 장면 미리보기로 진행됩니다.';
+}
+
+function pauseAudioTracks() {
+  for (const audio of state.audioTracks.values()) audio.pause();
+}
+
+function syncAudioTracks({ seeked = false } = {}) {
+  if (!state.episode) return;
+  const active = state.episode.cues.filter((cue) => cue.audioUrl
+    && state.time >= cue.start && state.time < cue.start + cue.duration);
+  const activeIds = new Set(active.map((cue) => cue.id));
+
+  for (const [cueId, audio] of state.audioTracks) {
+    if (!state.playing || !activeIds.has(cueId)) audio.pause();
+  }
+  if (!state.playing) return;
+
+  for (const cue of active) {
+    let audio = state.audioTracks.get(cue.id);
+    if (!audio) {
+      audio = new Audio(cue.audioUrl);
+      audio.preload = 'auto';
+      state.audioTracks.set(cue.id, audio);
+    }
+    audio.volume = audioVolume(cue);
+    audio.playbackRate = state.settings.playbackRate;
+    const position = Math.max(0, state.time - cue.start);
+    if (seeked || Math.abs(audio.currentTime - position) > 0.7) {
+      try { audio.currentTime = position; } catch { /* 메타데이터를 기다린다. */ }
+    }
+    audio.play().catch(() => {
+      if (state.audioErrorReported) return;
+      state.audioErrorReported = true;
+      announce('음원을 자동으로 시작하지 못했습니다. 재생 버튼을 다시 누르세요.');
+    });
+  }
 }
 
 // ── 현재 위치 계산 ────────────────────────────────────
@@ -73,7 +130,7 @@ function renderScene() {
   const img = $('#scene-image');
   if (scene?.url && img.getAttribute('src') !== scene.url) img.src = scene.url;
   img.hidden = !scene?.url;
-  img.alt = scene?.alt || `장면 ${state.sceneIndex + 1}`;
+  img.alt = scene?.alt || `장면 ${state.sceneIndex + 1}. 이미지 설명이 제공되지 않았습니다.`;
 }
 
 /** 자막은 큐가 바뀔 때만 갱신한다(스크린 리더가 매 프레임 읽지 않도록). */
@@ -89,6 +146,10 @@ function renderCue(force = false) {
     text: cue ? (cue.kind === 'sfx' ? `[${cue.text}]` : cue.text) : '재생할 내용이 없습니다.',
     next: next ? `다음: ${cueLabel(next)} “${next.text}”` : '마지막 장면입니다.',
   });
+  if (state.settings.announceScenes && cue) {
+    announce(`장면 ${state.sceneIndex + 1}. ${cueLabel(cue)}. ${cue.kind === 'sfx' ? cue.text : cue.text}`);
+  }
+  syncAudioTracks();
 }
 
 function renderTime() {
@@ -149,6 +210,7 @@ function tick(now) {
     state.time = state.episode.scenes[state.sceneIndex].start;
     setPlaying(false);
     toast('다음 장면에서 멈췄습니다. Space로 이어서 들을 수 있습니다.');
+    announce(`장면 ${state.sceneIndex + 1}에서 멈췄습니다. Space를 누르면 이어서 재생합니다.`);
     return;
   }
   if (state.time >= durationSeconds) {
@@ -163,13 +225,17 @@ function setPlaying(playing) {
   if (!state.episode) return;
   clearTimeout(state.autoNextTimer);
   state.autoNextTimer = null;
+  $('#cancel-auto-next').hidden = true;
   if (playing && state.time >= state.episode.durationSeconds) state.time = 0;
   state.playing = playing;
   $('#next-episode').hidden = true;
   if (playing) {
     lastFrame = performance.now();
+    state.audioErrorReported = false;
+    syncAudioTracks({ seeked: true });
     requestAnimationFrame(tick);
   } else {
+    pauseAudioTracks();
     persist();
   }
   renderTime();
@@ -178,6 +244,7 @@ function setPlaying(playing) {
 function seek(time) {
   state.time = Math.max(0, Math.min(state.episode.durationSeconds, time));
   render();
+  syncAudioTracks({ seeked: true });
   persist();
 }
 
@@ -204,6 +271,7 @@ function finish() {
   persist({ completed: true });
   const { nextEpisodeId } = state.episode;
   const nextButton = $('#next-episode');
+  const cancelButton = $('#cancel-auto-next');
   if (!nextEpisodeId) {
     toast('마지막 회차까지 감상했습니다.');
     return;
@@ -212,8 +280,19 @@ function finish() {
   nextButton.hidden = false;
   if (state.settings.autoNextEpisode) {
     toast('3초 후 다음 화를 재생합니다. Space를 누르면 취소합니다.');
+    announce('3초 뒤 다음 화로 이동합니다. 다음 화 자동 재생 취소 버튼 또는 Space를 눌러 취소할 수 있습니다.');
+    cancelButton.hidden = false;
     state.autoNextTimer = setTimeout(() => location.assign(`${nextButton.href}&autoplay=1`), AUTO_NEXT_DELAY_MS);
   }
+}
+
+function cancelAutoNext() {
+  if (!state.autoNextTimer) return;
+  clearTimeout(state.autoNextTimer);
+  state.autoNextTimer = null;
+  $('#cancel-auto-next').hidden = true;
+  toast('다음 화 자동 재생을 취소했습니다.');
+  announce('다음 화 자동 재생을 취소했습니다.');
 }
 
 // ── 불러오기 ──────────────────────────────────────────
@@ -231,6 +310,7 @@ async function load({ keepTime = false } = {}) {
   });
   $('#episode-list').href = `/series?id=${encodeURIComponent(episode.series.id)}`;
   $('#seek').max = String(episode.durationSeconds);
+  updateAudioStatus();
 
   if (keepTime) {
     // 화면해설 포함 여부가 바뀌면 시간축이 달라지므로 같은 장면의 처음으로 맞춘다.
@@ -252,6 +332,7 @@ $('#forward').addEventListener('click', () => seek(state.time + SEEK_STEP));
 $('#prev-scene').addEventListener('click', () => goScene(-1));
 $('#next-scene').addEventListener('click', () => goScene(1));
 $('#seek').addEventListener('input', (event) => seek(Number(event.target.value)));
+$('#cancel-auto-next').addEventListener('click', cancelAutoNext);
 
 $('#toggle-shortcuts').addEventListener('click', (event) => {
   const list = $('#shortcuts');
@@ -265,9 +346,7 @@ document.addEventListener('keydown', (event) => {
   if (!state.episode || event.target.closest('input, select, textarea, a, button')) return;
   if (event.code === 'Space' && state.autoNextTimer) {
     event.preventDefault();
-    clearTimeout(state.autoNextTimer);
-    state.autoNextTimer = null;
-    toast('다음 화 자동 재생을 취소했습니다.');
+    cancelAutoNext();
     return;
   }
   if (event.code === 'Space') {
@@ -288,6 +367,8 @@ window.addEventListener('pagehide', () => persist());
 renderSettings($('#settings-form'), (settings, changed) => {
   state.settings = settings;
   if (changed === 'narrationMode') void load({ keepTime: true });
+  else if (changed === 'announceScenes') announce(settings.announceScenes ? '장면 전환 안내를 켰습니다.' : '장면 전환 안내를 껐습니다.');
+  else syncAudioTracks({ seeked: changed === 'playbackRate' });
 });
 
 async function init() {

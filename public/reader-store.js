@@ -36,6 +36,7 @@ export const DEFAULT_SETTINGS = {
   sfxVolume: 70,
   autoNextScene: true,
   autoNextEpisode: true,
+  announceScenes: true,
   highContrast: false,
   textScale: 100,
 };

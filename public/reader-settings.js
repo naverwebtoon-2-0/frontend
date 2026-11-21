@@ -11,6 +11,7 @@ const VOLUMES = [
 const TOGGLES = [
   ['autoNextScene', '자동 다음 장면'],
   ['autoNextEpisode', '자동 다음 화'],
+  ['announceScenes', '장면 전환 안내'],
   ['highContrast', '고대비 포커스 표시'],
 ];
 
