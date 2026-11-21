@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>새 회차 업로드 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/upload.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__identity">
+      <a class="app-header__brand" href="/dashboard">울림툰</a>
+      <span>작가 대시보드</span>
+    </div>
+    <div class="app-header__account">
+      <a class="link" href="#help">도움말</a>
+      <span class="badge">작가 모드</span>
+      <span data-slot="author-name"></span>
+    </div>
+  </header>
+
+  <div class="author-layout">
+    <nav class="author-sidebar" aria-label="작가 메뉴">
+      <p class="author-sidebar__label">작가 메뉴</p>
+      <ul>
+        <li><a class="nav-item" href="/dashboard">대시보드</a></li>
+        <li><a class="nav-item" href="#works">작품 관리</a></li>
+        <li><a class="nav-item" href="/upload" aria-current="page">새 회차 업로드</a></li>
+        <li><a class="nav-item" href="#notifications">알림</a></li>
+        <li><a class="nav-item" href="#settings">설정</a></li>
+      </ul>
+    </nav>
+
+    <main class="author-main">
+      <div class="page-heading__copy">
+        <h1 class="heading">새 회차 업로드</h1>
+        <p>회차 정보와 원고를 등록하면 AI가 오디오 초안을 생성합니다.</p>
+      </div>
+
+      <ol class="steps" aria-label="업로드 단계">
+        <li class="steps__item steps__item--done"><span class="steps__number">1</span>기본 정보</li>
+        <li class="steps__item" aria-current="step"><span class="steps__number">2</span>원고 업로드</li>
+        <li class="steps__item"><span class="steps__number">3</span>생성 옵션</li>
+      </ol>
+
+      <form class="columns" id="upload-form" novalidate>
+        <section class="card panel columns__main" aria-label="회차 정보와 원고">
+          <div class="field">
+            <label for="episode-title">회차 제목</label>
+            <input class="input" id="episode-title" name="title" type="text"
+                   required autocomplete="off">
+          </div>
+
+          <div class="upload-zone" id="upload-zone">
+            <p class="subtitle">원고 이미지를 여기에 놓으세요</p>
+            <p class="text-small" id="upload-hint">JPG·PNG · 페이지당 최대 20MB</p>
+            <input class="upload-zone__input" id="manuscript" name="pages" type="file"
+                   accept="image/jpeg,image/png" multiple aria-describedby="upload-hint upload-error">
+            <label class="button button--secondary" for="manuscript">파일 선택</label>
+            <p class="upload-zone__error" id="upload-error" role="alert" hidden></p>
+            <ol class="thumbnails" id="thumbnails" aria-label="업로드한 페이지"></ol>
+          </div>
+        </section>
+
+        <aside class="card panel columns__aside" aria-labelledby="options-title">
+          <h2 class="subtitle" id="options-title">AI 생성 옵션</h2>
+          <ul class="checklist">
+            <li>OCR 및 대사 추출</li>
+            <li>등장인물·화자 구분</li>
+            <li>화면해설 초안 생성</li>
+            <li>화자별 TTS 생성</li>
+            <li>효과음 자동 추천</li>
+          </ul>
+          <div class="field field--compact">
+            <label for="language">원고 언어</label>
+            <span class="select-wrap">
+              <select class="select" id="language" name="language"></select>
+            </span>
+          </div>
+          <dl class="estimate">
+            <dt>예상 처리 시간</dt>
+            <dd id="estimate">약 6~8분</dd>
+          </dl>
+          <button class="button button--primary button--block" type="submit" disabled>AI 분석 시작</button>
+          <p class="text-small" id="submit-status" role="status" aria-live="polite"></p>
+        </aside>
+      </form>
+    </main>
+  </div>
+</body>
+</html>
