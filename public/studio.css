@@ -1202,3 +1202,99 @@ body.studio {
 .button--suggest:hover {
   background: rgba(242, 166, 90, 0.24);
 }
+
+/* 준비 중인 기능은 동작하는 편집 도구와 시각적으로 구분한다. */
+.feature-button {
+  gap: 6px;
+}
+
+.feature-status {
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* 좁은 화면에서는 편집 패널을 원고 아래에 두어 미리보기와 카드 폭을 보장한다. */
+@media (max-width: 900px) {
+  body.studio {
+    display: block;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .studio-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    min-height: 56px;
+  }
+
+  .studio-workspace {
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: minmax(480px, 1fr) auto;
+    min-height: 0;
+  }
+
+  .scene-nav {
+    grid-row: 1 / span 2;
+  }
+
+  .preview {
+    grid-column: 2;
+    min-height: 480px;
+  }
+
+  .inspector {
+    grid-column: 2;
+    min-height: 400px;
+  }
+
+  .timeline {
+    min-height: 185px;
+  }
+}
+
+@media (max-width: 620px) {
+  .studio-header {
+    position: static;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .studio-header__identity,
+  .studio-header__actions {
+    flex-wrap: wrap;
+  }
+
+  .studio-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .scene-nav {
+    min-height: 260px;
+  }
+
+  .scene-list {
+    max-height: 180px;
+  }
+
+  .preview,
+  .inspector {
+    min-height: 420px;
+  }
+
+  .timeline__header,
+  .timeline__controls,
+  .timeline__tools {
+    flex-wrap: wrap;
+    height: auto;
+  }
+
+  .timeline__header {
+    padding: 4px 0;
+  }
+}

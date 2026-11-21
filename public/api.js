@@ -495,7 +495,7 @@ export async function regenerateStale(episodeId, onProgress) {
   await waitForJob(job.id, onProgress);
 }
 
-// ── A5 게시 전 검수 ──────────────────────────────────
+// ── A5 게시 전 확인 ──────────────────────────────────
 
 /**
  * 게시 전 미리보기. GET /v1/episodes/{id}/preview (명세 §6.6, §9.2 playback 형식)
