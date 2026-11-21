@@ -73,18 +73,11 @@
       <p class="sub-filter" id="sub-filter"></p>
       <div class="inspector__scroll">
         <ol class="item-list" id="item-list" role="tabpanel"></ol>
-        <div class="inspector-card" id="combine-card" hidden>
+        <div class="inspector-card inspector-card--suggest" id="combine-card" hidden>
           <span class="inspector-card__copy text-small">
             <span data-slot="combine-label"></span>
           </span>
-          <button class="button button--elevated" type="button" data-pending="AI로 통합">AI로 통합</button>
-        </div>
-        <div class="inspector-card">
-          <span class="inspector-card__copy text-small">
-            <span data-slot="voice-heading">재생 음성</span>
-            <span data-slot="voice-label"></span>
-          </span>
-          <button class="button button--elevated" id="open-voice" type="button" aria-haspopup="dialog">음성 설정</button>
+          <button class="button button--suggest" type="button" data-pending="AI로 통합">AI로 통합</button>
         </div>
       </div>
       <button class="stale-button stale-button--block" id="batch-regenerate" type="button" aria-haspopup="dialog" hidden>
@@ -229,9 +222,9 @@
 
   <!-- 항목 메뉴 (Figma 91:1281 TTS 재생성 hover menu) -->
   <div class="item-menu" id="item-menu" role="menu" hidden>
-    <button type="button" role="menuitem" data-menu="regenerate">
-      <span>TTS 재생성</span>
-      <span class="item-menu__hint">텍스트는 그대로, 음성만 새로 생성</span>
+    <button type="button" role="menuitem" data-menu="voice" aria-haspopup="dialog">
+      <span>음성 설정</span>
+      <span class="item-menu__hint" data-slot="menu-voice"></span>
     </button>
     <hr>
     <button type="button" role="menuitem" data-menu="revert">

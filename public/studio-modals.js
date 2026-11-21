@@ -3,7 +3,7 @@
 // - 음성 설정(인물 voice_id·속도)
 // - 효과음 설정(sfx_tag·volume)
 // - 일괄 재생성 확인(stale 대사)
-// - ⋯ 메뉴(TTS 재생성 · 원문으로 되돌리기)
+// - ⋯ 메뉴(음성 설정 · 원문으로 되돌리기). TTS 재생성은 수정된 대사 카드의 버튼으로만 한다.
 import {
   regenerateLine,
   regenerateStale,
@@ -254,6 +254,11 @@ export function setupModals(ctx) {
     revert.disabled = !canRevert;
     fillSlots(menu, { 'menu-original': item.originalText ? `OCR 원본 · “${item.originalText}”` : 'OCR 원본 정보 없음' });
 
+    // 음성 설정: 대사는 화자, 나레이션은 나레이터. 효과음 글자처럼 인물이 없으면 막는다.
+    const character = state.studio.characters.find((c) => c.id === item.characterId);
+    menu.querySelector('[data-menu="voice"]').disabled = !character;
+    fillSlots(menu, { 'menu-voice': character ? `${character.name} · ${character.voiceName}` : '음성을 쓰는 인물이 없습니다' });
+
     menu.hidden = false;
     const rect = trigger.getBoundingClientRect();
     const width = menu.offsetWidth;
@@ -268,8 +273,8 @@ export function setupModals(ctx) {
     if (!action) return;
     const item = menuTarget;
     closeMenu();
-    if (action === 'regenerate') {
-      await regenerate(item);
+    if (action === 'voice') {
+      openVoice(item);
     } else if (action === 'revert') {
       try {
         await updateLine(item.id, { text: item.originalText });

@@ -217,16 +217,6 @@ function itemActions(item) {
   return actions;
 }
 
-/** 음성 설정 카드: 선택한 항목의 인물(대사는 화자, 그 밖에는 나레이터) 음성 */
-function renderVoiceCard() {
-  const item = state.scene?.items.find((i) => i.id === state.itemId);
-  const characters = state.studio.characters;
-  const character = characters.find((c) => c.id === item?.characterId) ?? characters.find((c) => c.kind === 'narration');
-  fillSlots(document, {
-    'voice-heading': character?.kind === 'narration' || !character ? '재생 음성 · 나레이션' : `재생 음성 · ${character.name}`,
-    'voice-label': character ? `${character.voiceName} · 속도 ${[0.9, 1.0, 1.1][character.speed + 1]?.toFixed(1) ?? '1.0'}×` : '음성 미지정',
-  });
-}
 
 /** 회차 전체의 재생성 대상 수로 일괄 재생성 버튼을 갱신한다. */
 function renderBatchButton() {
@@ -265,7 +255,6 @@ function renderItem(item) {
 function renderInspector() {
   const { scene } = state;
   fillSlots(document, { 'inspector-title': `${sceneName(scene.number)} 편집` });
-  renderVoiceCard();
 
   $('#item-tabs').replaceChildren(...TABS.map((tab) => {
     const count = scene.items.filter((item) => tab.types.includes(item.type)).length;
@@ -306,7 +295,7 @@ function renderInspector() {
   const description = scene.items.find((i) => i.type === 'description');
   $('#combine-card').hidden = !(narration && description);
   if (narration && description) {
-    fillSlots(document, { 'combine-label': `${narration.number}·${description.number}번 내레이션 합치기` });
+    fillSlots(document, { 'combine-label': `${narration.number}·${description.number}번 내레이션을 합칠까요?` });
   }
 
   renderBatchButton();
@@ -324,7 +313,6 @@ function selectItem(itemId) {
     else el.removeAttribute('aria-current');
   }
   renderClipsCurrent();
-  renderVoiceCard();
 }
 
 let modals;
@@ -560,7 +548,6 @@ function bindEvents() {
     }
   });
 
-  $('#open-voice').addEventListener('click', () => modals.openVoice(currentItem()));
   $('#batch-regenerate').addEventListener('click', () => modals.openBatch());
 
   $('#item-list').addEventListener('change', (event) => {

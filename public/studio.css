@@ -1466,3 +1466,25 @@ body.studio {
   border-style: dashed;
   background: transparent;
 }
+
+/* 내레이션 통합 제안: 주황색으로 살짝 강조 */
+.inspector-card--suggest {
+  border: 1px solid rgba(242, 166, 90, 0.45);
+  background: rgba(242, 166, 90, 0.08);
+}
+
+.inspector-card--suggest .inspector-card__copy {
+  color: var(--track-dialogue);
+}
+
+.button--suggest {
+  padding: 6px var(--space-300);
+  border-color: rgba(242, 166, 90, 0.6);
+  background: rgba(242, 166, 90, 0.14);
+  color: var(--track-dialogue);
+  font-size: 13px;
+}
+
+.button--suggest:hover {
+  background: rgba(242, 166, 90, 0.24);
+}
