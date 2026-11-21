@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>제작 스튜디오 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/modal.css">
+  <link rel="stylesheet" href="/studio.css">
+  <script src="/studio.js" type="module"></script>
+</head>
+<body class="studio">
+  <header class="studio-header">
+    <div class="studio-header__identity">
+      <a class="app-header__brand" href="/dashboard">울림툰</a>
+      <span class="studio-header__divider" aria-hidden="true"></span>
+      <div class="studio-header__context">
+        <h1 class="studio-header__title">제작 스튜디오</h1>
+        <span class="text-small" data-slot="episode-name">&nbsp;</span>
+      </div>
+      <span class="studio-badge">작가 모드</span>
+    </div>
+    <div class="studio-header__actions">
+      <span class="text-small" data-slot="saved-at" aria-live="polite"></span>
+      <button class="button button--elevated" type="button" data-pending="독자처럼 듣기">독자처럼 듣기</button>
+      <button class="button button--elevated" id="save-draft" type="button">임시 저장</button>
+      <a class="button button--primary" id="publish-review" href="#publish-review">게시 전 확인</a>
+    </div>
+  </header>
+
+  <div class="studio-workspace" id="workspace" aria-busy="true">
+    <!-- 장면 목록 -->
+    <nav class="scene-nav" aria-labelledby="scene-nav-title">
+      <div class="scene-nav__header">
+        <h2 class="studio-title" id="scene-nav-title">장면 목록</h2>
+        <span class="text-small" data-slot="scene-count"></span>
+      </div>
+      <div class="scene-nav__progress">
+        <span class="text-small" id="scene-progress-label" data-slot="review-summary"></span>
+        <div class="progress__track progress__track--sm" id="scene-progress" role="progressbar"
+             aria-labelledby="scene-progress-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="progress__value"></div>
+        </div>
+      </div>
+      <ol class="scene-list" id="scene-list"></ol>
+    </nav>
+
+    <!-- 원고 미리보기 -->
+    <section class="preview" aria-labelledby="preview-title">
+      <div class="preview__toolbar">
+        <div class="preview__title">
+          <h2 class="studio-title" id="preview-title">원고 미리보기</h2>
+          <span class="text-small">OCR 영역 표시</span>
+        </div>
+        <div class="zoom" role="group" aria-label="미리보기 확대">
+          <button class="button button--elevated button--icon" id="preview-zoom-out" type="button" aria-label="축소">－</button>
+          <output class="text-small" id="preview-zoom">75%</output>
+          <button class="button button--elevated button--icon" id="preview-zoom-in" type="button" aria-label="확대">＋</button>
+        </div>
+      </div>
+      <div class="preview__canvas">
+        <div class="manuscript" id="manuscript"></div>
+      </div>
+    </section>
+
+    <!-- 장면 편집 -->
+    <section class="inspector" aria-labelledby="inspector-title">
+      <div class="inspector__heading">
+        <h2 class="heading" id="inspector-title" data-slot="inspector-title">장면 편집</h2>
+      </div>
+      <div class="tabs" role="tablist" aria-label="항목 종류" id="item-tabs"></div>
+      <p class="sub-filter" id="sub-filter"></p>
+      <div class="inspector__scroll">
+        <ol class="item-list" id="item-list" role="tabpanel"></ol>
+        <div class="inspector-card inspector-card--suggest" id="combine-card" hidden>
+          <span class="inspector-card__copy text-small">
+            <span data-slot="combine-label"></span>
+          </span>
+          <button class="button button--suggest" type="button" data-pending="AI로 통합">AI로 통합</button>
+        </div>
+      </div>
+      <button class="stale-button stale-button--block" id="batch-regenerate" type="button" aria-haspopup="dialog" hidden>
+        <img src="/icons/dot-stale.svg" width="6" height="6" alt="">
+        <span data-slot="stale-label"></span>
+      </button>
+      <button class="button button--primary button--block" id="complete-review" type="button">이 장면 검수 완료</button>
+    </section>
+  </div>
+
+  <!-- 오디오 타임라인 -->
+  <section class="timeline" id="timeline" aria-label="오디오 타임라인">
+    <div class="timeline__header">
+      <div class="timeline__controls">
+        <button class="play-button" id="timeline-play" type="button" aria-label="재생" aria-pressed="false">
+          <img src="/icons/play.svg" width="20" height="20" alt="">
+        </button>
+        <button class="button button--elevated" id="seek-back" type="button">−5초</button>
+        <button class="button button--elevated" id="seek-forward" type="button">+5초</button>
+        <span class="text-small" data-slot="time"></span>
+        <span class="text-small" data-slot="now-playing"></span>
+      </div>
+      <div class="timeline__tools">
+        <button class="button button--elevated" id="timeline-zoom-out" type="button" aria-label="타임라인 축소">−</button>
+        <output class="text-small" id="timeline-zoom">100%</output>
+        <button class="button button--elevated" id="timeline-zoom-in" type="button" aria-label="타임라인 확대">+</button>
+        <button class="button button--elevated" id="timeline-collapse" type="button" aria-expanded="true" aria-controls="timeline-body">접기</button>
+        <button class="button button--elevated" type="button" data-pending="전체 미리 듣기">전체 미리 듣기</button>
+      </div>
+    </div>
+    <div class="timeline__body" id="timeline-body">
+      <div class="timeline__labels" id="track-labels" aria-hidden="true"></div>
+      <div class="timeline__scroll">
+        <div class="timeline__lane" id="timeline-lane">
+          <div class="timeline__ruler" id="ruler" aria-hidden="true"></div>
+          <div class="timeline__tracks" id="tracks"></div>
+          <div class="playhead" id="playhead" aria-hidden="true">
+            <span class="playhead__time" data-slot="playhead-time"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 텍스트 수정 / 화면해설 수정 (Figma 91:1290) -->
+  <dialog class="modal" id="text-modal" aria-labelledby="text-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="text-modal-title" data-slot="text-modal-title">텍스트 수정</h2>
+        <p data-slot="text-modal-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <label class="modal__field">
+        <span class="modal__label" data-slot="text-modal-label">원고 텍스트</span>
+        <textarea class="modal__textarea" name="text" rows="4" maxlength="500" required></textarea>
+      </label>
+      <p class="modal__note" data-slot="text-modal-note">저장 후 음성은 필요한 경우에만 생성할 수 있습니다.</p>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary" type="submit">저장하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 음성 설정 (Figma 91:1546) -->
+  <dialog class="modal" id="voice-modal" aria-labelledby="voice-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="voice-modal-title">음성 설정</h2>
+        <p data-slot="voice-modal-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <label class="modal__field">
+        <span class="modal__label" data-slot="voice-modal-label">화자</span>
+        <select class="modal__select" name="voice"></select>
+      </label>
+      <fieldset class="modal__field">
+        <legend class="modal__label">말하기 속도</legend>
+        <div class="segmented">
+          <label><input type="radio" name="speed" value="-1"><span>0.9×</span></label>
+          <label><input type="radio" name="speed" value="0"><span>1.0×</span></label>
+          <label><input type="radio" name="speed" value="1"><span>1.1×</span></label>
+        </div>
+      </fieldset>
+      <div class="modal__row">
+        <button class="modal__preview" type="button" data-preview="voice">▶&nbsp;&nbsp;<span data-slot="voice-preview">미리 듣기</span></button>
+        <span class="modal__hint" data-slot="voice-current">현재 음성</span>
+      </div>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary" type="submit">적용하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 효과음 설정 (Figma 91:1812) -->
+  <dialog class="modal modal--wide" id="sfx-modal" aria-labelledby="sfx-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="sfx-modal-title">효과음 설정</h2>
+        <p data-slot="sfx-modal-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <label class="modal__field">
+        <span class="modal__label">효과음 프리셋</span>
+        <select class="modal__select" name="preset"></select>
+      </label>
+      <div class="modal__row">
+        <button class="modal__preview" type="button" data-preview="sfx">▶&nbsp;&nbsp;미리 듣기</button>
+        <label class="volume">
+          <input type="range" name="volume" min="0" max="100" step="5" aria-label="볼륨">
+          <output class="modal__hint" data-slot="sfx-volume"></output>
+        </label>
+      </div>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary" type="submit">적용하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 일괄 재생성 확인 (Figma 91:2074) -->
+  <dialog class="modal modal--narrow" id="batch-modal" aria-labelledby="batch-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="batch-modal-title">변경된 항목을 생성할까요?</h2>
+        <p>텍스트는 유지하고 오디오만 새로 생성합니다.</p>
+      </div>
+      <hr class="modal__divider">
+      <ul class="modal__list" id="batch-list"></ul>
+      <p class="modal__estimate" data-slot="batch-estimate"></p>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>취소</button>
+        <button class="modal__button modal__button--primary modal__button--auto" type="submit" data-slot="batch-submit">생성하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 항목 메뉴 (Figma 91:1281 TTS 재생성 hover menu) -->
+  <div class="item-menu" id="item-menu" role="menu" hidden>
+    <button type="button" role="menuitem" data-menu="voice" aria-haspopup="dialog">
+      <span>음성 설정</span>
+      <span class="item-menu__hint" data-slot="menu-voice"></span>
+    </button>
+    <hr>
+    <button type="button" role="menuitem" data-menu="revert">
+      <span>원문으로 되돌리기</span>
+      <span class="item-menu__hint" data-slot="menu-original"></span>
+    </button>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <template id="scene-card">
+    <li>
+      <button class="scene-card" type="button">
+        <span class="scene-card__indicator" aria-hidden="true"></span>
+        <span class="scene-card__content">
+          <strong data-slot="name"></strong>
+          <span class="text-small" data-slot="title"></span>
+          <span class="text-small" data-slot="status"></span>
+        </span>
+        <span class="scene-card__badge text-small" data-slot="badge"></span>
+      </button>
+    </li>
+  </template>
+
+  <template id="editor-item">
+    <li class="editor-item">
+      <span class="editor-item__indicator" aria-hidden="true"></span>
+      <div class="editor-item__content">
+        <div class="editor-item__heading">
+          <span class="editor-item__identity">
+            <span class="number-badge" data-slot="number"></span>
+            <span class="pill-select"><select data-field="kind" aria-label="항목 종류"></select></span>
+            <span class="text-small" data-slot="source"></span>
+          </span>
+          <span class="text-small" data-slot="start"></span>
+        </div>
+        <p class="editor-item__text" data-slot="text"></p>
+        <div class="editor-item__actions">
+          <button class="play-button" type="button" data-action="play" aria-label="이 항목 재생">
+            <img src="/icons/play.svg" width="20" height="20" alt="">
+          </button>
+        </div>
+      </div>
+    </li>
+  </template>
+</body>
+</html>

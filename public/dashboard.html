@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>작가 대시보드 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/dashboard.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__identity">
+      <a class="app-header__brand" href="/dashboard">울림툰</a>
+      <span>작가 대시보드</span>
+    </div>
+    <div class="app-header__account">
+      <a class="link" href="#help">도움말</a>
+      <span class="badge">작가 모드</span>
+      <span data-slot="author-name"></span>
+    </div>
+  </header>
+
+  <div class="author-layout">
+    <nav class="author-sidebar" aria-label="작가 메뉴">
+      <p class="author-sidebar__label">작가 메뉴</p>
+      <ul>
+        <li><a class="nav-item" href="/dashboard" aria-current="page">대시보드</a></li>
+        <li><a class="nav-item" href="#works">작품 관리</a></li>
+        <li><a class="nav-item" href="/upload">새 회차 업로드</a></li>
+        <li><a class="nav-item" href="#notifications">알림</a></li>
+        <li><a class="nav-item" href="#settings">설정</a></li>
+      </ul>
+    </nav>
+
+    <main class="author-main" id="dashboard" aria-busy="true">
+      <div class="page-heading">
+        <div class="page-heading__copy">
+          <h1 class="heading">작가 대시보드</h1>
+          <p>작품 제작 현황과 검수 항목을 확인하세요.</p>
+        </div>
+        <a class="button button--primary" href="/upload">＋ 새 회차 업로드</a>
+      </div>
+
+      <div class="load-error" id="load-error" role="alert" hidden>
+        <p>대시보드를 불러오지 못했습니다.</p>
+        <button class="button button--secondary" id="retry" type="button">다시 시도</button>
+      </div>
+
+      <ul class="stats" aria-label="제작 지표">
+        <li class="card stat-card">
+          <span>검수 필요</span>
+          <strong class="stat-card__value" data-slot="review-count">–</strong>
+          <span data-slot="review-note"></span>
+        </li>
+        <li class="card stat-card">
+          <span>AI 처리 중</span>
+          <strong class="stat-card__value" data-slot="processing-count">–</strong>
+          <span data-slot="processing-note"></span>
+        </li>
+        <li class="card stat-card">
+          <span>게시 완료</span>
+          <strong class="stat-card__value" data-slot="published-count">–</strong>
+          <span data-slot="published-note"></span>
+        </li>
+      </ul>
+
+      <section class="card panel" aria-labelledby="project-title">
+        <div class="panel__header">
+          <div class="panel__copy">
+            <h2 class="subtitle" id="project-title" data-slot="work-title">&nbsp;</h2>
+            <p class="text-small" data-slot="work-meta">&nbsp;</p>
+          </div>
+          <a class="button" href="#works">작품 관리</a>
+        </div>
+        <div class="progress" id="review-block">
+          <div class="progress__copy">
+            <span id="progress-label" data-slot="review-label">검수 진행률</span>
+            <span data-slot="review-percent"></span>
+            <a class="link" id="review-link" href="#" hidden>검수하기 ›</a>
+          </div>
+          <div class="progress__track" id="review-progress" role="progressbar" aria-labelledby="progress-label"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="progress__value"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card panel panel--list" aria-labelledby="recent-title">
+        <div class="panel__header">
+          <h2 class="subtitle" id="recent-title">최근 회차</h2>
+          <a class="link text-small" href="#episodes">전체 보기 ›</a>
+        </div>
+        <ul class="episode-list" id="recent-episodes"></ul>
+      </section>
+    </main>
+  </div>
+
+  <template id="episode-row">
+    <li class="episode-row">
+      <div class="episode-row__title">
+        <span class="episode-row__name" data-slot="name"></span>
+        <span class="text-small" data-slot="updated"></span>
+      </div>
+      <div class="episode-row__status">
+        <span data-slot="status"></span>
+        <span data-slot="duration"></span>
+        <a data-slot="action"></a>
+      </div>
+    </li>
+  </template>
+</body>
+</html>
