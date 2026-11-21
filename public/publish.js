@@ -293,6 +293,7 @@ confirmModal.querySelector('form').addEventListener('submit', async (event) => {
       'done-episode': `${episode.workTitle} · ${episodeLabel(episode.number, episode.title)}`,
       'done-meta': `${scheduled ? `예약 · ${formatSchedule(at)}` : '즉시 공개'} · ${LANGUAGE[episode.language] ?? episode.language}`,
     });
+    $('#done-reader').href = `/viewer?episode=${encodeURIComponent(episodeId)}`;
     doneModal.showModal();
     await load();
   } catch (err) {
@@ -404,10 +405,6 @@ for (const radio of document.querySelectorAll('[name="visibility"]')) {
   });
 }
 
-$('#done-reader').addEventListener('click', (event) => {
-  event.preventDefault();
-  toast('독자 화면은 다음 단계에서 연결됩니다.');
-});
 $('#retry').addEventListener('click', () => void load());
 
 // ── 시작 ─────────────────────────────────────────────

@@ -19,7 +19,25 @@ const notFound = () => { throw new MockHttpError(404, 'NOT_FOUND', '리소스를
 
 const db = {
   me: { id: 'us_01', email: 'author@example.com', nickname: '서윤', role: 'author', settings: {} },
-  series: [{ id: 'sr_01', title: '별빛 아래 우리', description: '비 오는 골목에서 다시 만난 두 사람', language: 'ko' }],
+  // author_name·genre·age_rating·features·status·cover_url은 독자 화면용 제안 필드(명세 §4.1·§9.1에 없음)
+  series: [
+    {
+      id: 'sr_01', title: '별빛 아래 우리', description: '오랜 친구였던 서윤과 민호가 비 내리는 도시에서 다시 만나는 이야기.', language: 'ko',
+      author_name: '서윤', genre: '로맨스', age_rating: '12세 이용가', features: ['description', 'sfx'], status: 'ongoing', cover_url: null,
+    },
+    {
+      id: 'sr_02', title: '용의 기억', description: '잠든 용의 기억을 따라 사라진 왕국을 찾아가는 모험.', language: 'ko',
+      author_name: '한결', genre: '판타지', age_rating: '전체 이용가', features: ['description', 'sfx'], status: 'completed', cover_url: null,
+    },
+    {
+      id: 'sr_03', title: '퇴근 후 미스터리', description: '평범한 회사원이 퇴근길마다 마주치는 이상한 사건들.', language: 'ko',
+      author_name: '도윤', genre: '스릴러', age_rating: '15세 이용가', features: ['sfx'], status: 'ongoing', cover_url: null,
+    },
+    {
+      id: 'sr_04', title: '우리 동네 히어로', description: '동네를 지키는 평범한 영웅들의 유쾌한 하루.', language: 'ko',
+      author_name: '이안', genre: '액션', age_rating: '전체 이용가', features: ['description', 'multilingual'], status: 'ongoing', cover_url: null,
+    },
+  ],
   episodes: [],
   images: {},
   characters: [
@@ -59,13 +77,28 @@ TITLES.forEach((title, i) => {
   });
 });
 
+// 다른 작품: 모두 게시된 회차. 독자 화면용
+for (const [seriesId, count, daysAgo] of [['sr_02', 48, 30], ['sr_03', 8, 1], ['sr_04', 21, 2]]) {
+  for (let number = 1; number <= count; number += 1) {
+    db.episodes.push({
+      id: `${seriesId}_ep_${String(number).padStart(2, '0')}`,
+      series_id: seriesId,
+      number,
+      title: `${number}화`,
+      state: 'published',
+      image_count: 6,
+      updated_at: ago(((count - number) * 7 + daysAgo) * 60 * 24),
+    });
+  }
+}
+
 // 12화 원고 이미지 6장과 분석 결과
 const PAGE = { url: '/mock/page.svg', width: 800, height: 1100 };
 db.images.ep_12 = [
-  { id: 'img_01', index: 0, ...PAGE, alt: '', reviewed: true },
+  { id: 'img_01', index: 0, ...PAGE, alt: '가로등 하나가 비 내리는 골목을 비춘다.', reviewed: true },
   { id: 'img_02', index: 1, ...PAGE, alt: '서윤이 우산 없이 골목 끝을 바라본다.', reviewed: false },
   { id: 'img_03', index: 2, ...PAGE, alt: '', reviewed: false },
-  { id: 'img_04', index: 3, ...PAGE, alt: '', reviewed: false },
+  { id: 'img_04', index: 3, ...PAGE, alt: '굵어진 빗줄기 속에서 서윤이 우산을 접는다.', reviewed: false },
   { id: 'img_05', index: 4, ...PAGE, alt: '', reviewed: true },
   { id: 'img_06', index: 5, ...PAGE, alt: '', reviewed: false },
 ];
@@ -150,6 +183,74 @@ function jobView(job) {
 
 const episodeOf = (id) => db.episodes.find((e) => e.id === id) ?? notFound();
 const imagesOf = (episodeId) => db.images[episodeId] ?? [];
+
+/** 명세 §9.2 형식의 images + playback. 원고 데이터가 없는 회차는 12화 내용으로 대신 보여 준다. */
+function buildPlayback(episodeId) {
+  const own = imagesOf(episodeId);
+  const images = [...(own.length ? own : imagesOf('ep_12'))].sort((a, b) => a.index - b.index);
+  const characters = new Map(db.characters.map((c) => [c.id, c]));
+  const presets = new Map(db.sfxPresets.map((p) => [p.tag, p.name]));
+  const cues = [];
+  for (const image of images) {
+    for (const l of db.lines.filter((it) => it.image_id === image.id && it.kind !== 'ignore')) {
+      cues.push({
+        id: `cu_${l.id}`,
+        image_index: image.index,
+        y_ratio: l.bbox?.y ?? 0,
+        kind: l.kind === 'sfx_text' ? 'sfx' : l.kind,
+        text: l.text,
+        speaker: l.kind === 'dialogue' ? characters.get(l.character_id)?.name ?? null : null,
+        audio_url: null,
+        duration_ms: l.audio.duration_ms,
+      });
+    }
+    for (const c of db.sfxCues.filter((it) => it.image_id === image.id)) {
+      cues.push({
+        id: c.id,
+        image_index: image.index,
+        y_ratio: c.y_ratio,
+        kind: 'sfx',
+        label: presets.get(c.sfx_tag) ?? c.sfx_tag,
+        audio_url: null,
+        duration_ms: c.duration_ms,
+      });
+    }
+  }
+  cues.sort((a, b) => a.image_index - b.image_index || a.y_ratio - b.y_ratio);
+  return {
+    images: images.map((img) => ({ index: img.index, url: img.url, width: img.width, height: img.height, alt: img.alt })),
+    playback: { version: 0, cues },
+  };
+}
+
+// ── 독자용 공개 데이터 (명세 §9) ─────────────────────────
+
+const publishedOf = (seriesId) => db.episodes
+  .filter((e) => e.series_id === seriesId && e.state === 'published')
+  .sort((a, b) => a.number - b.number);
+
+function publicSeries(series) {
+  const episodes = publishedOf(series.id);
+  const latest = episodes.at(-1);
+  return {
+    ...series,
+    episode_count: episodes.length,
+    latest_episode_number: latest?.number ?? null,
+    updated_at: latest?.updated_at ?? null,
+  };
+}
+
+function playbackDurationMs(episodeId) {
+  return buildPlayback(episodeId).playback.cues
+    .filter((c) => c.kind !== 'sfx')
+    .reduce((sum, c) => sum + (c.duration_ms ?? 0) + 300, 0);
+}
+
+function publicEpisodeOf(id) {
+  const episode = db.episodes.find((e) => e.id === id && e.state === 'published');
+  if (!episode) notFound();
+  return episode;
+}
 
 const routes = [
   ['GET', /^\/v1\/me$/, () => db.me],
@@ -270,43 +371,7 @@ const routes = [
   }],
 
   // 명세 §6.6: 독자 뷰어와 같은 형식(§9.2 playback)의 게시 전 미리보기
-  ['GET', /^\/v1\/episodes\/([^/]+)\/preview$/, ([id]) => {
-    const images = [...imagesOf(id)].sort((a, b) => a.index - b.index);
-    const characters = new Map(db.characters.map((c) => [c.id, c]));
-    const presets = new Map(db.sfxPresets.map((p) => [p.tag, p.name]));
-    const cues = [];
-    for (const image of images) {
-      for (const l of db.lines.filter((it) => it.image_id === image.id && it.kind !== 'ignore')) {
-        cues.push({
-          id: `cu_${l.id}`,
-          image_index: image.index,
-          y_ratio: l.bbox?.y ?? 0,
-          kind: l.kind === 'sfx_text' ? 'sfx' : l.kind,
-          text: l.text,
-          speaker: l.kind === 'dialogue' ? characters.get(l.character_id)?.name ?? null : null,
-          audio_url: null,
-          duration_ms: l.audio.duration_ms,
-        });
-      }
-      for (const c of db.sfxCues.filter((it) => it.image_id === image.id)) {
-        cues.push({
-          id: c.id,
-          image_index: image.index,
-          y_ratio: c.y_ratio,
-          kind: 'sfx',
-          label: presets.get(c.sfx_tag) ?? c.sfx_tag,
-          audio_url: null,
-          duration_ms: c.duration_ms,
-        });
-      }
-    }
-    cues.sort((a, b) => a.image_index - b.image_index || a.y_ratio - b.y_ratio);
-    return {
-      id,
-      images: images.map((img) => ({ index: img.index, url: img.url, width: img.width, height: img.height, alt: img.alt })),
-      playback: { version: 0, cues },
-    };
-  }],
+  ['GET', /^\/v1\/episodes\/([^/]+)\/preview$/, ([id]) => ({ id, ...buildPlayback(id) })],
   // 명세 §8 게시: stale 대사가 남으면 409
   ['POST', /^\/v1\/episodes\/([^/]+)\/publish$/, ([id], body) => {
     const episode = episodeOf(id);
@@ -323,13 +388,51 @@ const routes = [
   }],
   ['POST', /^\/v1\/episodes\/([^/]+)\/unpublish$/, ([id]) => Object.assign(episodeOf(id), { state: 'needs_review', updated_at: new Date().toISOString() })],
 
+  // ── 명세 §9 독자용 공개 API (비로그인 허용) ──
+  ['GET', /^\/v1\/public\/series$/, (_, __, query) => {
+    const q = (query.get('q') ?? '').trim().toLowerCase();
+    const items = db.series
+      .map(publicSeries)
+      .filter((s) => s.episode_count > 0)
+      .filter((s) => !q || [s.title, s.author_name, s.genre].some((v) => v?.toLowerCase().includes(q)))
+      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    return { items, next_cursor: null };
+  }],
+  ['GET', /^\/v1\/public\/series\/([^/]+)$/, ([id]) => publicSeries(db.series.find((s) => s.id === id) ?? notFound())],
+  ['GET', /^\/v1\/public\/series\/([^/]+)\/episodes$/, ([id]) => ({
+    items: publishedOf(id).map((e) => ({
+      id: e.id,
+      number: e.number,
+      title: e.title,
+      // 제안 필드: 회차 길이, 게시 시각
+      duration_ms: playbackDurationMs(e.id),
+      published_at: e.updated_at,
+    })),
+    next_cursor: null,
+  })],
+  ['GET', /^\/v1\/public\/episodes\/([^/]+)$/, ([id]) => {
+    const episode = publicEpisodeOf(id);
+    const siblings = publishedOf(episode.series_id);
+    const index = siblings.findIndex((e) => e.id === id);
+    return {
+      id,
+      title: episode.title,
+      number: episode.number,
+      series_id: episode.series_id,
+      language: 'ko',
+      ...buildPlayback(id),
+      prev_episode_id: siblings[index - 1]?.id ?? null,
+      next_episode_id: siblings[index + 1]?.id ?? null,
+    };
+  }],
+
   ['GET', /^\/v1\/voices$/, () => ({ items: db.voices, next_cursor: null })],
   ['GET', /^\/v1\/sfx-presets$/, () => ({ items: db.sfxPresets, next_cursor: null })],
 ];
 
 // 페이지를 옮겨도 목 데이터(새 회차, 작업 등)가 이어지도록 탭 세션에 보관한다.
 // 목 데이터 구조가 바뀌면 버전을 올려 이전 세션 데이터를 버린다.
-const STORE_KEY = 'naverwebtoon.mock-db.v2';
+const STORE_KEY = 'naverwebtoon.mock-db.v3';
 try {
   const saved = sessionStorage.getItem(STORE_KEY);
   if (saved) Object.assign(db, JSON.parse(saved).db);
@@ -347,12 +450,13 @@ function persist() {
 
 /** 명세 형태의 응답을 돌려준다. 실패하면 { status, body } 형태로 던진다. */
 export function handle(method, path, body) {
-  const [pathname] = path.split('?');
+  const [pathname, queryString = ''] = path.split('?');
+  const query = new URLSearchParams(queryString);
   for (const [m, pattern, handler] of routes) {
     const match = m === method && pathname.match(pattern);
     if (match) {
       try {
-        const result = structuredClone(handler(match.slice(1), body ?? {}));
+        const result = structuredClone(handler(match.slice(1), body ?? {}, query));
         persist();
         return { status: method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200, body: result };
       } catch (err) {
