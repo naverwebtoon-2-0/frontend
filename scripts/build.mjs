@@ -44,6 +44,7 @@ routes.push({ src: '^/dashboard$', dest: '/dashboard.html' });
 routes.push({ src: '^/upload$', dest: '/upload.html' });
 routes.push({ src: '^/processing$', dest: '/processing.html' });
 routes.push({ src: '^/studio$', dest: '/studio.html' });
+routes.push({ src: '^/publish$', dest: '/publish.html' });
 
 const output = new URL('../.vercel/output/', import.meta.url);
 await rm(output, { recursive: true, force: true });

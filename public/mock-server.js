@@ -257,7 +257,8 @@ const routes = [
     const ids = new Set(imagesOf(id).map((img) => img.id));
     const lines = db.lines.filter((l) => ids.has(l.image_id));
     const targets = body.scope === 'lines' ? lines.filter((l) => body.line_ids.includes(l.id))
-      : body.scope === 'all' ? lines : lines.filter((l) => l.audio.status === 'stale');
+      // 목 서버에는 생성 완료를 알리는 흐름이 없어, 생성 중(pending)인 대사도 함께 완료시킨다.
+      : body.scope === 'all' ? lines : lines.filter((l) => l.audio.status !== 'ready');
     const jobId = newId('job');
     db.jobs[jobId] = {
       started: Date.now(),
@@ -267,6 +268,60 @@ const routes = [
     };
     return { job: { id: jobId, kind: 'regenerate', status: 'queued' } };
   }],
+
+  // 명세 §6.6: 독자 뷰어와 같은 형식(§9.2 playback)의 게시 전 미리보기
+  ['GET', /^\/v1\/episodes\/([^/]+)\/preview$/, ([id]) => {
+    const images = [...imagesOf(id)].sort((a, b) => a.index - b.index);
+    const characters = new Map(db.characters.map((c) => [c.id, c]));
+    const presets = new Map(db.sfxPresets.map((p) => [p.tag, p.name]));
+    const cues = [];
+    for (const image of images) {
+      for (const l of db.lines.filter((it) => it.image_id === image.id && it.kind !== 'ignore')) {
+        cues.push({
+          id: `cu_${l.id}`,
+          image_index: image.index,
+          y_ratio: l.bbox?.y ?? 0,
+          kind: l.kind === 'sfx_text' ? 'sfx' : l.kind,
+          text: l.text,
+          speaker: l.kind === 'dialogue' ? characters.get(l.character_id)?.name ?? null : null,
+          audio_url: null,
+          duration_ms: l.audio.duration_ms,
+        });
+      }
+      for (const c of db.sfxCues.filter((it) => it.image_id === image.id)) {
+        cues.push({
+          id: c.id,
+          image_index: image.index,
+          y_ratio: c.y_ratio,
+          kind: 'sfx',
+          label: presets.get(c.sfx_tag) ?? c.sfx_tag,
+          audio_url: null,
+          duration_ms: c.duration_ms,
+        });
+      }
+    }
+    cues.sort((a, b) => a.image_index - b.image_index || a.y_ratio - b.y_ratio);
+    return {
+      id,
+      images: images.map((img) => ({ index: img.index, url: img.url, width: img.width, height: img.height, alt: img.alt })),
+      playback: { version: 0, cues },
+    };
+  }],
+  // 명세 §8 게시: stale 대사가 남으면 409
+  ['POST', /^\/v1\/episodes\/([^/]+)\/publish$/, ([id], body) => {
+    const episode = episodeOf(id);
+    if (episode.state !== 'needs_review') {
+      throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '현재 상태에서는 게시할 수 없습니다.', { state: episode.state });
+    }
+    const ids = new Set(imagesOf(id).map((img) => img.id));
+    const stale = db.lines.filter((l) => ids.has(l.image_id) && l.kind !== 'ignore' && l.audio.status !== 'ready');
+    if (stale.length) {
+      throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '다시 만들어야 하는 음성이 남아 있습니다.', { stale_line_ids: stale.map((l) => l.id) });
+    }
+    Object.assign(episode, { state: 'published', publish_at: body.publish_at ?? null, updated_at: new Date().toISOString() });
+    return episode;
+  }],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/unpublish$/, ([id]) => Object.assign(episodeOf(id), { state: 'needs_review', updated_at: new Date().toISOString() })],
 
   ['GET', /^\/v1\/voices$/, () => ({ items: db.voices, next_cursor: null })],
   ['GET', /^\/v1\/sfx-presets$/, () => ({ items: db.sfxPresets, next_cursor: null })],

@@ -390,7 +390,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
   });
 
   return {
-    episode: { id: episode.id, number: episode.number, title: episode.title, workTitle: series.title, state: episode.state },
+    episode: { id: episode.id, number: episode.number, title: episode.title, workTitle: series.title, state: episode.state, language: series.language ?? 'ko' },
     lastSavedAt: episode.updated_at,
     review: {
       reviewedCount: scenes.filter((s) => s.status === 'done').length,
@@ -493,6 +493,47 @@ export async function regenerateStale(episodeId, onProgress) {
     idempotent: true,
   });
   await waitForJob(job.id, onProgress);
+}
+
+// ── A5 게시 전 검수 ──────────────────────────────────
+
+/**
+ * 게시 전 미리보기. GET /v1/episodes/{id}/preview (명세 §6.6, §9.2 playback 형식)
+ * 말하는 큐(대사·나레이션)는 순서대로 이어 붙이고, 효과음 큐는 그 자리에서 겹쳐 시작한다.
+ */
+export async function getPublishPreview(episodeId) {
+  const preview = await request(`/v1/episodes/${enc(episodeId)}/preview`);
+  const images = new Map(preview.images.map((img) => [img.index, img]));
+  let cursor = 0;
+  const cues = preview.playback.cues.map((cue) => {
+    const duration = (cue.duration_ms ?? 0) / 1000;
+    const start = cursor;
+    if (cue.kind !== 'sfx') cursor += duration + CLIP_GAP;
+    return {
+      id: cue.id,
+      kind: cue.kind,
+      imageIndex: cue.image_index,
+      text: cue.kind === 'sfx' ? cue.label ?? cue.text : cue.text,
+      speaker: cue.speaker ?? null,
+      audioUrl: cue.audio_url,
+      start,
+      duration,
+    };
+  });
+  const durationSeconds = Math.max(0, cursor - CLIP_GAP, ...cues.map((c) => c.start + c.duration));
+  return { images, cues, durationSeconds };
+}
+
+/**
+ * 게시. POST /v1/episodes/{id}/publish { publish_at }
+ * stale 대사가 남으면 409 EPISODE_STATE_INVALID + details.stale_line_ids
+ */
+export async function publishEpisode(episodeId, { publishAt = null } = {}) {
+  return request(`/v1/episodes/${enc(episodeId)}/publish`, {
+    method: 'POST',
+    body: { publish_at: publishAt },
+    idempotent: true,
+  });
 }
 
 const JOB_POLL_MS = 1000;

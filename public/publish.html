@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>게시 전 확인 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/modal.css">
+  <link rel="stylesheet" href="/publish.css">
+  <script src="/publish.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__identity">
+      <a class="app-header__brand" href="/dashboard">울림툰</a>
+      <span>작가 대시보드</span>
+    </div>
+    <div class="app-header__account">
+      <a class="link" href="#help">도움말</a>
+      <span class="badge">작가 모드</span>
+      <span data-slot="author-name"></span>
+    </div>
+  </header>
+
+  <div class="author-layout">
+    <nav class="author-sidebar" aria-label="작가 메뉴">
+      <p class="author-sidebar__label">작가 메뉴</p>
+      <ul>
+        <li><a class="nav-item" href="/dashboard">대시보드</a></li>
+        <li><a class="nav-item" href="#works" aria-current="page">작품 관리</a></li>
+        <li><a class="nav-item" href="/upload">새 회차 업로드</a></li>
+        <li><a class="nav-item" href="#notifications">알림</a></li>
+        <li><a class="nav-item" href="#settings">설정</a></li>
+      </ul>
+    </nav>
+
+    <main class="author-main" id="publish" aria-busy="true">
+      <div class="page-heading__copy">
+        <h1 class="heading">게시 전 확인</h1>
+        <p data-slot="heading-sub">독자가 듣게 될 최종 결과를 확인하세요.</p>
+      </div>
+
+      <div class="load-error" id="load-error" role="alert" hidden>
+        <p data-slot="load-error">회차 정보를 불러오지 못했습니다.</p>
+        <button class="button button--secondary" id="retry" type="button">다시 시도</button>
+      </div>
+
+      <div class="publish-columns">
+        <!-- 독자 화면 미리보기 (Figma 33:831) -->
+        <section class="card panel reader-preview" aria-labelledby="preview-title">
+          <div class="panel__header">
+            <h2 class="subtitle" id="preview-title">독자 화면 미리보기</h2>
+            <span class="text-small" data-slot="total-duration"></span>
+          </div>
+          <div class="reader-preview__stage" aria-live="polite">
+            <img class="reader-preview__image" id="preview-image" alt="" hidden>
+            <p class="reader-preview__caption" id="preview-caption" hidden>
+              <span class="reader-preview__speaker" data-slot="caption-speaker"></span>
+              <span data-slot="caption-text"></span>
+            </p>
+            <p class="reader-preview__empty" data-slot="preview-empty">미리보기를 불러오는 중입니다.</p>
+          </div>
+          <div class="reader-preview__controls">
+            <div class="reader-preview__player">
+              <button class="play-button" id="preview-play" type="button" aria-label="재생" aria-pressed="false">
+                <img src="/icons/play.svg" width="20" height="20" alt="">
+              </button>
+              <span class="text-small tabular" data-slot="preview-time">00:00 / 00:00</span>
+              <button class="speed-button text-small" id="preview-speed" type="button" aria-label="재생 속도">1.0×</button>
+            </div>
+            <button class="button button--secondary" id="preview-all" type="button">전체 미리 듣기</button>
+          </div>
+        </section>
+
+        <!-- 게시 전 확인 (Figma 33:843) -->
+        <section class="card panel checklist-panel" aria-labelledby="checklist-title">
+          <h2 class="subtitle" id="checklist-title">확인 항목</h2>
+          <div class="issue-summary" id="issue-summary" data-state="loading">
+            <strong data-slot="summary-title">검수 항목을 확인하는 중입니다.</strong>
+            <span class="text-small" data-slot="summary-sub"></span>
+            <button class="issue-summary__link" id="open-warnings" type="button" aria-haspopup="dialog" hidden>경고 상세 보기 →</button>
+          </div>
+          <ul class="checklist-rows" id="checklist" aria-label="검수 항목"></ul>
+
+          <fieldset class="publish-settings">
+            <legend>공개 설정</legend>
+            <div class="publish-settings__options">
+              <label><input type="radio" name="visibility" value="now" checked> 즉시 게시</label>
+              <label><input type="radio" name="visibility" value="scheduled"> 예약 게시</label>
+            </div>
+            <label class="publish-settings__schedule" id="schedule-field" hidden>
+              <span class="text-small">게시 시각</span>
+              <input class="input" type="datetime-local" name="publishAt">
+            </label>
+            <p class="text-small" data-slot="language">공개 언어 · 한국어</p>
+          </fieldset>
+
+          <button class="button button--primary button--block" id="open-confirm" type="button" aria-haspopup="dialog" disabled>최종 게시하기</button>
+          <a class="button button--block" id="back-to-studio" href="#">제작 스튜디오로 돌아가기</a>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <template id="check-row">
+    <li class="check-row">
+      <span class="check-row__copy">
+        <span class="check-row__mark" aria-hidden="true" data-slot="mark"></span>
+        <span data-slot="label"></span>
+      </span>
+      <span class="check-row__status" data-slot="status"></span>
+    </li>
+  </template>
+
+  <!-- 경고 상세 (Figma 86:1045) -->
+  <dialog class="modal modal--narrow" id="warning-modal" aria-labelledby="warning-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__title-row">
+        <h2 id="warning-modal-title">경고 상세</h2>
+        <span class="status-pill" data-slot="warning-status">권장 · 게시 가능</span>
+      </div>
+      <hr class="modal__divider">
+      <div class="warning-list" id="warning-list"></div>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>나중에 확인</button>
+        <a class="modal__button modal__button--primary modal__button--auto modal__button--link" id="warning-go" href="#">스튜디오에서 확인</a>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 게시 확인 (Figma 91:2130) -->
+  <dialog class="modal modal--narrow" id="confirm-modal" aria-labelledby="confirm-modal-title">
+    <form class="modal__body" novalidate>
+      <div class="modal__heading">
+        <h2 id="confirm-modal-title" data-slot="confirm-title">최종 게시할까요?</h2>
+        <p data-slot="confirm-sub">게시 후에는 독자 화면에 즉시 노출됩니다.</p>
+      </div>
+      <hr class="modal__divider">
+      <dl class="summary-list">
+        <div><dt>회차</dt><dd data-slot="confirm-episode"></dd></div>
+        <div><dt>공개 설정</dt><dd data-slot="confirm-visibility"></dd></div>
+        <div><dt>공개 언어</dt><dd data-slot="confirm-language"></dd></div>
+      </dl>
+      <p class="modal__note" data-slot="confirm-note" hidden></p>
+      <p class="modal__error" role="alert" hidden></p>
+      <div class="modal__actions">
+        <button class="modal__button" type="button" data-close>돌아가기</button>
+        <button class="modal__button modal__button--primary" type="submit">게시하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 게시 완료 (Figma 91:2190) -->
+  <dialog class="modal modal--narrow" id="done-modal" aria-labelledby="done-modal-title">
+    <div class="modal__body">
+      <div class="modal__heading modal__heading--success">
+        <h2 id="done-modal-title" data-slot="done-title"></h2>
+        <p data-slot="done-sub"></p>
+      </div>
+      <hr class="modal__divider">
+      <div class="published-item">
+        <strong data-slot="done-episode"></strong>
+        <span data-slot="done-meta"></span>
+      </div>
+      <div class="modal__actions">
+        <a class="modal__button modal__button--link" href="/dashboard">작품 관리</a>
+        <a class="modal__button modal__button--primary modal__button--auto modal__button--link" id="done-reader" href="#reader">독자 화면 보기</a>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

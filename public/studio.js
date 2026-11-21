@@ -641,7 +641,7 @@ async function init() {
   }
   state.speakers = state.studio.speakers;
   state.time = state.studio.timeline.lastPlayheadSeconds ?? 0;
-  $('#publish-review').href = `#publish-review-${state.studio.episode.id}`;
+  $('#publish-review').href = `/publish?episode=${encodeURIComponent(state.studio.episode.id)}`;
   renderHeader();
   renderTimeline();
   const requested = params.get('scene');
