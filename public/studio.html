@@ -148,16 +148,6 @@
     </li>
   </template>
 
-  <template id="ocr-item">
-    <div class="ocr-item">
-      <span class="ocr-item__meta">
-        <span class="number-badge" data-slot="number"></span>
-        <span data-slot="label"></span>
-      </span>
-      <span class="ocr-item__bubble" data-slot="text"></span>
-    </div>
-  </template>
-
   <template id="editor-item">
     <li class="editor-item">
       <span class="editor-item__indicator" aria-hidden="true"></span>
@@ -170,12 +160,6 @@
           </span>
           <span class="text-small" data-slot="start"></span>
         </div>
-        <span class="pill-select editor-item__mode" data-role="mode">
-          <select data-field="playMode" aria-label="재생 방식">
-            <option value="separate">재생 · 구분</option>
-            <option value="merged">재생 · 이어서</option>
-          </select>
-        </span>
         <p class="editor-item__text" data-slot="text"></p>
         <div class="editor-item__actions">
           <button class="play-button" type="button" data-action="play" aria-label="이 항목 재생">

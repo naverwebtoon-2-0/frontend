@@ -1,15 +1,28 @@
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 
 const origin = process.env.NCP_BACKEND_ORIGIN;
+// 원고 업로드(presigned PUT)와 이미지·음원 조회가 가는 Object Storage
+const storage = 'https://kr.object.ncloudstorage.com';
+const csp = [
+  "default-src 'self'",
+  `img-src 'self' ${storage}`,
+  `media-src 'self' ${storage}`,
+  `connect-src 'self' ${storage}`,
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+].join('; ');
 const headers = {
-  'Content-Security-Policy': "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+  'Content-Security-Policy': csp,
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 };
 const routes = [{ src: '^/.*$', headers, continue: true }];
 
-// 동일 출처의 상태 API 경로 한 개만 백엔드로 전달한다.
+// 동일 출처 /api 아래 두 경로만 백엔드로 전달한다. /api 접두어는 여기서 떼어 낸다.
+// - /api/healthz → /healthz (배포 확인)
+// - /api/v1/*   → /v1/*     (API 명세 §1)
 if (origin) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.origin !== origin) {
@@ -19,6 +32,11 @@ if (origin) {
     src: '^/api/healthz$',
     methods: ['GET', 'HEAD'],
     dest: new URL('/healthz', url).href,
+  });
+  routes.push({
+    src: '^/api/v1/(.*)$',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    dest: `${url.origin}/v1/$1`,
   });
 }
 routes.push({ src: '^/$', dest: '/index.html' });

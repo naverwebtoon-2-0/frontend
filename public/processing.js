@@ -1,16 +1,17 @@
 // A3 AI 처리 진행: 작업 상태를 주기적으로 조회해 진행률과 단계를 갱신한다.
 import { getProcessingJob } from './api.js';
-import { fillSlots, formatApproxMinutes, renderHeader, setProgress } from './common.js';
+import { episodeLabel, fillSlots, formatApproxMinutes, renderHeader, setProgress } from './common.js';
 
 const POLL_MS = 2000;
 
-// 단계 키별 이름과 상태별 설명. 서버는 key·status와 숫자만 보낸다.
+// 명세 §5 파이프라인 단계(ocr → structure → dubbing → build_cues). 서버는 key·status와 진행 수만 보낸다.
+const progressText = (verb) => (s) => (s.total ? `${s.processed ?? 0}/${s.total} ${verb}` : verb);
 const STEPS = {
   upload: { label: '원고 업로드', done: (s) => `${s.pageCount}개 페이지 완료` },
-  scene_split: { label: '장면 분리', done: (s) => `${s.sceneCount}개 장면 감지` },
-  ocr: { label: 'OCR 및 대사 분석', running: (s) => `${s.processed}/${s.total} 장면 처리 중`, done: (s) => `${s.total}개 장면 분석 완료` },
-  narration: { label: '화면해설 생성', running: (s) => `${s.processed}/${s.total} 장면 생성 중`, done: (s) => `${s.total}개 장면 생성 완료` },
-  audio: { label: '음성·효과음 생성', running: (s) => `${s.processed}/${s.total} 장면 생성 중`, done: (s) => `${s.total}개 장면 생성 완료` },
+  ocr: { label: '말풍선 글자 인식', running: progressText('페이지 인식 중'), done: () => '인식 완료' },
+  structure: { label: '인물·대사 정리', running: progressText('항목 정리 중'), done: () => '정리 완료' },
+  dubbing: { label: '음성·효과음 생성', running: progressText('항목 생성 중'), done: () => '생성 완료' },
+  build_cues: { label: '재생 타임라인 구성', running: () => '구성 중', done: () => '구성 완료' },
 };
 
 const STATUS_TEXT = { pending: '대기 중', running: '처리 중', done: '완료', failed: '오류' };
@@ -52,10 +53,10 @@ function render(job) {
   const failed = job.status === 'failed';
   fillSlots(card, {
     headline: completed ? '오디오 초안이 준비됐습니다' : failed ? '처리 중 문제가 생겼습니다' : '오디오 초안을 만들고 있습니다',
-    episode: `${job.episode.number}화 · ${job.episode.title}`,
+    episode: episodeLabel(job.episode.number, job.episode.title),
     hint: completed ? '검수를 시작해 결과를 확인하세요.' : '페이지를 닫아도 작업은 계속됩니다.',
-    overall: completed ? '100% · 완료' : `${job.progress}% · ${formatApproxMinutes(job.remainingSeconds)} 남음`,
-    errors: `처리 오류 ${job.errorCount}건`,
+    overall: completed ? '100% · 완료' : job.remainingSeconds == null ? `${job.progress}%` : `${job.progress}% · ${formatApproxMinutes(job.remainingSeconds)} 남음`,
+    errors: job.errorMessage ? `처리 오류: ${job.errorMessage}` : `처리 오류 ${job.errorCount}건`,
   });
   setProgress(document.querySelector('#overall-progress'), job.progress);
   renderSteps(job.steps);

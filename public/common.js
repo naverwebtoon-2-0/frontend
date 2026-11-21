@@ -52,3 +52,9 @@ export async function renderHeader() {
     fillSlots(document, { 'author-name': '' });
   }
 }
+
+/** "12화 · 빗속의 약속". 제목이 "12화"처럼 번호와 같으면 한 번만 쓴다. */
+export function episodeLabel(number, title) {
+  const prefix = `${number}화`;
+  return !title || title.trim() === prefix ? prefix : `${prefix} · ${title}`;
+}

@@ -312,69 +312,65 @@ body.studio {
 }
 
 .manuscript {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-300);
   width: 420px;
-  padding: var(--space-400);
-  border-radius: var(--radius-200);
-  background: var(--manuscript-page);
-  color: var(--manuscript-text);
-  font-size: var(--text-small);
-  transform-origin: center;
+  transform-origin: center top;
   transition: transform 0.15s ease;
 }
 
-.manuscript__panel {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-100);
-  min-height: 125px;
-  padding: var(--space-300) var(--space-300) var(--space-400);
-  border-radius: var(--radius-100);
-  background: var(--manuscript-panel);
-}
-
-.manuscript__panel--character {
-  flex-direction: row;
-  justify-content: space-between;
-}
-
-.manuscript__character {
-  width: 82px;
-  height: 104px;
-  border: 1px solid var(--manuscript-border);
-  border-radius: var(--radius-100);
+/* 원고 이미지와 감지 영역(bbox, 0~1 상대 좌표) */
+.page {
+  position: relative;
+  min-height: 200px;
+  border-radius: var(--radius-200);
   background: var(--manuscript-page);
 }
 
-.ocr-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-100);
-  min-width: 112px;
-  max-width: 226px;
+.page img {
+  display: block;
+  width: 100%;
+  height: auto;
   border-radius: var(--radius-200);
+}
+
+.ocr-marker {
+  position: absolute;
+  min-width: 12px;
+  min-height: 12px;
+  padding: 0;
+  border: 2px solid var(--track);
+  border-radius: var(--radius-100);
+  background: color-mix(in srgb, var(--track) 12%, transparent);
   cursor: pointer;
 }
 
-.ocr-item__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-100);
+.ocr-marker .number-badge {
+  position: absolute;
+  top: -12px;
+  left: -12px;
 }
 
-.ocr-item__bubble {
-  padding: var(--space-100) var(--space-200);
-  border: 1px solid var(--manuscript-text);
-  border-radius: var(--radius-200);
-  background: var(--manuscript-page);
+.ocr-marker--cue {
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: none;
 }
 
-.ocr-item[aria-current="true"] .ocr-item__bubble {
+.ocr-marker[aria-current="true"] {
   outline: 2px solid var(--clova-green);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+.ocr-marker--cue[aria-current="true"] .number-badge {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}
+
+.preview__canvas {
+  align-items: flex-start;
+  padding: var(--space-600) 0;
 }
 
 /* 트랙 종류별 색 */
@@ -382,6 +378,7 @@ body.studio {
 [data-type="description"] { --track: var(--track-description); }
 [data-type="dialogue"] { --track: var(--track-dialogue); }
 [data-type="sfx"] { --track: var(--track-sfx); }
+[data-type="ignore"] { --track: var(--studio-text-muted); }
 
 .number-badge {
   display: inline-flex;
@@ -769,6 +766,11 @@ body.studio {
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   transform: translateX(-50%);
+}
+
+.playhead--start .playhead__time {
+  left: 0;
+  transform: none;
 }
 
 /* 알림 */

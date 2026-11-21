@@ -1,0 +1,263 @@
+// 백엔드 API 명세(초안)를 흉내 내는 목 서버.
+// api.js가 USE_MOCK일 때 fetch 대신 handle()을 호출한다. 응답 형태는 명세(/v1, snake_case)를 따른다.
+// 명세에 없는 경로는 '제안'으로 표시했다.
+
+const ago = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
+let seq = 100;
+const newId = (prefix) => `${prefix}_${++seq}`;
+
+class MockHttpError extends Error {
+  constructor(status, code, message, details) {
+    super(message);
+    this.status = status;
+    this.body = { error: { code, message, details } };
+  }
+}
+const notFound = () => { throw new MockHttpError(404, 'NOT_FOUND', '리소스를 찾을 수 없습니다.'); };
+
+// ── 데이터 ───────────────────────────────────────────
+
+const db = {
+  me: { id: 'us_01', email: 'author@example.com', nickname: '서윤', role: 'author', settings: {} },
+  series: [{ id: 'sr_01', title: '별빛 아래 우리', description: '비 오는 골목에서 다시 만난 두 사람', language: 'ko' }],
+  episodes: [],
+  images: {},
+  characters: [
+    { id: 'ch_narr', name: '나레이션', kind: 'narration', voice_id: 'nara', voice_params: { speed: 0, pitch: 0 } },
+    { id: 'ch_seoyun', name: '서윤', voice_id: 'dain', voice_params: { speed: 0, pitch: 0 } },
+    { id: 'ch_minho', name: '민호', voice_id: 'jinho', voice_params: { speed: 0, pitch: -1 } },
+  ],
+  lines: [],
+  sfxCues: [],
+  jobs: {},
+  voices: [
+    { id: 'nara', name: '나라 · 차분함', gender: 'female', age: 'adult' },
+    { id: 'dain', name: '다인', gender: 'female', age: 'young' },
+    { id: 'jinho', name: '진호', gender: 'male', age: 'young' },
+  ],
+  sfxPresets: [
+    { tag: 'rain_loop', name: '빗소리 · 반복', category: 'weather' },
+    { tag: 'thunder_near', name: '천둥(가까이)', category: 'weather' },
+    { tag: 'door_open', name: '문 열림', category: 'object' },
+  ],
+};
+
+// 1~11화 게시, 12화 검수 대기
+const TITLES = ['첫 만남', '우산', '골목길', '편의점', '비밀', '약속', '기억', '편지', '재회', '오래된 편지', '새로운 단서', '빗속의 약속'];
+TITLES.forEach((title, i) => {
+  const number = i + 1;
+  db.episodes.push({
+    id: `ep_${String(number).padStart(2, '0')}`,
+    series_id: 'sr_01',
+    number,
+    title,
+    state: number === 12 ? 'needs_review' : 'published',
+    image_count: 6,
+    updated_at: number === 12 ? ago(10) : ago((12 - number) * 60 * 24 * 3 - 60 * 24 * 2),
+  });
+});
+
+// 12화 원고 이미지 6장과 분석 결과
+const PAGE = { url: '/mock/page.svg', width: 800, height: 1100 };
+db.images.ep_12 = [
+  { id: 'img_01', index: 0, ...PAGE, alt: '', reviewed: true },
+  { id: 'img_02', index: 1, ...PAGE, alt: '서윤이 우산 없이 골목 끝을 바라본다.', reviewed: false },
+  { id: 'img_03', index: 2, ...PAGE, alt: '', reviewed: false },
+  { id: 'img_04', index: 3, ...PAGE, alt: '', reviewed: false },
+  { id: 'img_05', index: 4, ...PAGE, alt: '', reviewed: true },
+  { id: 'img_06', index: 5, ...PAGE, alt: '', reviewed: false },
+];
+
+const audio = (id, ms, status = 'ready') => ({ asset_id: `au_${id}`, url: null, duration_ms: ms, status });
+const line = (id, imageId, order, kind, characterId, text, bbox, ms, status, emotion = 'neutral') => ({
+  id, image_id: imageId, order, text, bbox, kind, character_id: characterId, emotion, audio: audio(id, ms, status),
+});
+db.lines.push(
+  line('ln_01', 'img_01', 1, 'narration', 'ch_narr', '골목에는 가로등 하나만 켜져 있었다.', { x: 0.08, y: 0.06, w: 0.6, h: 0.05 }, 3200, 'ready'),
+  line('ln_02', 'img_02', 1, 'narration', 'ch_narr', '비가 세차게 내리던 밤이었다.', { x: 0.08, y: 0.07, w: 0.55, h: 0.05 }, 3000, 'ready'),
+  line('ln_03', 'img_02', 2, 'dialogue', 'ch_seoyun', '민호야?', { x: 0.55, y: 0.42, w: 0.3, h: 0.05 }, 1500, 'stale', 'surprised'),
+  line('ln_04', 'img_02', 3, 'sfx_text', null, '쾅!', { x: 0.08, y: 0.78, w: 0.22, h: 0.06 }, 900, 'stale'),
+  line('ln_05', 'img_03', 1, 'dialogue', 'ch_minho', '왜?', { x: 0.6, y: 0.2, w: 0.2, h: 0.05 }, 1200, 'stale'),
+  line('ln_06', 'img_04', 1, 'narration', 'ch_narr', '빗줄기가 점점 굵어졌다.', { x: 0.08, y: 0.08, w: 0.5, h: 0.05 }, 2600, 'stale'),
+  line('ln_07', 'img_04', 2, 'dialogue', 'ch_seoyun', '이제 가야 해.', { x: 0.5, y: 0.5, w: 0.35, h: 0.05 }, 1800, 'stale', 'sad'),
+  line('ln_08', 'img_05', 1, 'narration', 'ch_narr', '낡은 문이 삐걱 소리를 내며 열렸다.', { x: 0.08, y: 0.1, w: 0.65, h: 0.05 }, 3400, 'ready'),
+  line('ln_09', 'img_06', 1, 'narration', 'ch_narr', '그날의 기억이 떠올랐다.', { x: 0.08, y: 0.1, w: 0.5, h: 0.05 }, null, 'pending'),
+);
+db.sfxCues.push(
+  { id: 'cu_01', image_id: 'img_01', y_ratio: 0.05, sfx_tag: 'rain_loop', volume: 0.5, duration_ms: 9000, asset_id: 'au_sfx_01', url: null },
+  { id: 'cu_02', image_id: 'img_02', y_ratio: 0.8, sfx_tag: 'thunder_near', volume: 0.7, duration_ms: 2500, asset_id: 'au_sfx_02', url: null },
+  { id: 'cu_03', image_id: 'img_05', y_ratio: 0.08, sfx_tag: 'door_open', volume: 0.8, duration_ms: 2000, asset_id: 'au_sfx_03', url: null },
+);
+
+// ── 작업(파이프라인) 진행 시뮬레이션: 약 30초 ──────────────────
+
+const STEPS = [
+  { step: 'ocr', seconds: 8 },
+  { step: 'structure', seconds: 8 },
+  { step: 'dubbing', seconds: 10 },
+  { step: 'build_cues', seconds: 4 },
+];
+
+function jobView(job) {
+  const elapsed = (Date.now() - job.started) / 1000;
+  const episode = db.episodes.find((e) => e.id === job.episode_id);
+  const totals = { ocr: episode.image_count, structure: 18, dubbing: 18, build_cues: 1 };
+  let offset = 0;
+  for (const { step, seconds } of STEPS) {
+    if (elapsed < offset + seconds) {
+      const total = totals[step];
+      return {
+        ...job.base,
+        status: 'running',
+        step,
+        progress: { done: Math.floor(((elapsed - offset) / seconds) * total), total },
+        finished_at: null,
+      };
+    }
+    offset += seconds;
+  }
+  if (episode.state !== 'needs_review') {
+    episode.state = 'needs_review';
+    episode.updated_at = new Date().toISOString();
+    // 새 회차는 분석 결과를 지어낼 수 없으니 12화의 분석 결과를 그대로 보여 준다.
+    const ids = new Set((db.images[episode.id] ?? []).map((img) => img.id));
+    if (!db.lines.some((l) => ids.has(l.image_id))) {
+      db.images[episode.id] = structuredClone(db.images.ep_12).map((img) => ({ ...img, reviewed: false }));
+      episode.image_count = db.images[episode.id].length;
+    }
+  }
+  return { ...job.base, status: 'succeeded', step: 'done', progress: { done: 1, total: 1 }, finished_at: new Date().toISOString() };
+}
+
+// ── 라우트 ───────────────────────────────────────────
+
+const episodeOf = (id) => db.episodes.find((e) => e.id === id) ?? notFound();
+const imagesOf = (episodeId) => db.images[episodeId] ?? [];
+
+const routes = [
+  ['GET', /^\/v1\/me$/, () => db.me],
+
+  ['GET', /^\/v1\/series$/, () => ({ items: db.series, next_cursor: null })],
+  ['GET', /^\/v1\/series\/([^/]+)$/, ([id]) => db.series.find((s) => s.id === id) ?? notFound()],
+  ['GET', /^\/v1\/series\/([^/]+)\/episodes$/, ([id]) => ({
+    items: db.episodes.filter((e) => e.series_id === id),
+    next_cursor: null,
+  })],
+  ['POST', /^\/v1\/series\/([^/]+)\/episodes$/, ([id], body) => {
+    const number = Math.max(0, ...db.episodes.filter((e) => e.series_id === id).map((e) => e.number)) + 1;
+    const episode = { id: newId('ep'), series_id: id, number, title: body.title, state: 'draft', image_count: 0, updated_at: new Date().toISOString() };
+    db.episodes.push(episode);
+    return episode;
+  }],
+
+  ['GET', /^\/v1\/episodes\/([^/]+)$/, ([id]) => episodeOf(id)],
+  ['PATCH', /^\/v1\/episodes\/([^/]+)$/, ([id], body) => Object.assign(episodeOf(id), body, { updated_at: new Date().toISOString() })],
+  ['GET', /^\/v1\/episodes\/([^/]+)\/images$/, ([id]) => ({ items: imagesOf(id), next_cursor: null })],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/images\/presign$/, ([id], body) => {
+    episodeOf(id);
+    const start = imagesOf(id).length;
+    return {
+      uploads: body.files.map((file, i) => ({
+        image_id: newId('img'),
+        index: start + i,
+        method: 'PUT',
+        url: `mock://object-storage/${id}/${file.filename}`,
+        headers: { 'Content-Type': file.content_type },
+        expires_in: 600,
+      })),
+    };
+  }],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/images\/complete$/, ([id], body) => {
+    const episode = episodeOf(id);
+    const images = (db.images[id] ??= []);
+    for (const imageId of body.image_ids) images.push({ id: imageId, index: images.length, ...PAGE, alt: '', reviewed: false });
+    Object.assign(episode, { state: 'uploaded', image_count: images.length, updated_at: new Date().toISOString() });
+    return { episode: { state: episode.state, image_count: episode.image_count } };
+  }],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/process$/, ([id]) => {
+    const episode = episodeOf(id);
+    if (!['uploaded', 'failed'].includes(episode.state)) {
+      throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '현재 상태에서는 분석을 시작할 수 없습니다.', { state: episode.state });
+    }
+    episode.state = 'analyzing';
+    const jobId = newId('job');
+    db.jobs[jobId] = {
+      started: Date.now(),
+      episode_id: id,
+      base: { id: jobId, episode_id: id, kind: 'process', error: null, started_at: new Date().toISOString() },
+    };
+    return { job: { id: jobId, status: 'queued', step: 'ocr' }, episode: { state: episode.state } };
+  }],
+  ['GET', /^\/v1\/jobs\/([^/]+)$/, ([id]) => {
+    // 데모용: job_demo는 12화 분석을 처음부터 보여 준다.
+    if (id === 'job_demo' && !db.jobs.job_demo) {
+      db.jobs.job_demo = { started: Date.now(), episode_id: 'ep_12', base: { id, episode_id: 'ep_12', kind: 'process', error: null, started_at: new Date().toISOString() } };
+    }
+    return db.jobs[id] ? jobView(db.jobs[id]) : notFound();
+  }],
+
+  ['GET', /^\/v1\/episodes\/([^/]+)\/studio$/, ([id]) => {
+    const episode = episodeOf(id);
+    const images = imagesOf(id);
+    const imageIds = new Set(images.map((img) => img.id));
+    return {
+      episode: { id: episode.id, state: episode.state },
+      images,
+      characters: db.characters,
+      lines: db.lines.filter((l) => imageIds.has(l.image_id)),
+      sfx_cues: db.sfxCues.filter((c) => imageIds.has(c.image_id)),
+    };
+  }],
+  ['PATCH', /^\/v1\/lines\/([^/]+)$/, ([id], body) => {
+    const target = db.lines.find((l) => l.id === id) ?? notFound();
+    const affectsAudio = ['text', 'character_id', 'emotion', 'kind'].some((k) => k in body && body[k] !== target[k]);
+    Object.assign(target, body);
+    if (affectsAudio) target.audio.status = 'stale';
+    return target;
+  }],
+  // 제안: 이미지(장면) 단위 검수 완료. 명세에 없음
+  ['PATCH', /^\/v1\/episodes\/([^/]+)\/images\/([^/]+)$/, ([episodeId, imageId], body) => {
+    const image = imagesOf(episodeId).find((img) => img.id === imageId) ?? notFound();
+    Object.assign(image, body);
+    return image;
+  }],
+
+  ['GET', /^\/v1\/voices$/, () => ({ items: db.voices, next_cursor: null })],
+  ['GET', /^\/v1\/sfx-presets$/, () => ({ items: db.sfxPresets, next_cursor: null })],
+];
+
+// 페이지를 옮겨도 목 데이터(새 회차, 작업 등)가 이어지도록 탭 세션에 보관한다.
+const STORE_KEY = 'naverwebtoon.mock-db';
+try {
+  const saved = sessionStorage.getItem(STORE_KEY);
+  if (saved) Object.assign(db, JSON.parse(saved).db);
+  seq = Math.max(seq, JSON.parse(saved ?? '{}').seq ?? 0);
+} catch {
+  // 저장소를 쓸 수 없으면 페이지마다 초기 데이터로 시작한다.
+}
+function persist() {
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify({ db, seq }));
+  } catch {
+    // 무시
+  }
+}
+
+/** 명세 형태의 응답을 돌려준다. 실패하면 { status, body } 형태로 던진다. */
+export function handle(method, path, body) {
+  const [pathname] = path.split('?');
+  for (const [m, pattern, handler] of routes) {
+    const match = m === method && pathname.match(pattern);
+    if (match) {
+      try {
+        const result = structuredClone(handler(match.slice(1), body ?? {}));
+        persist();
+        return { status: method === 'POST' && /\/process$/.test(pathname) ? 202 : 200, body: result };
+      } catch (err) {
+        if (err instanceof MockHttpError) return { status: err.status, body: err.body };
+        throw err;
+      }
+    }
+  }
+  return { status: 404, body: { error: { code: 'NOT_FOUND', message: `목 서버에 없는 경로입니다: ${method} ${pathname}` } } };
+}

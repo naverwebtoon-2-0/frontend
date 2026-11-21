@@ -1,12 +1,6 @@
 // A4 제작 스튜디오: 장면 목록 · 원고 미리보기 · 장면 편집 · 오디오 타임라인
-import {
-  completeSceneReview,
-  getScene,
-  getSpeakers,
-  getStudio,
-  saveStudioDraft,
-  updateSceneItem,
-} from './api.js';
+// 데이터는 api.js의 getStudio()가 명세 §6 응답을 바꿔 준다. 장면 = 원고 이미지 한 장.
+import { completeSceneReview, getScene, getStudio, updateLine } from './api.js';
 import { fillSlots, formatDuration, setProgress } from './common.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -15,21 +9,20 @@ const episodeId = params.get('episode');
 
 const SCENE_STATUS = {
   done: { label: '검수 완료', badge: '✓ 완료' },
-  review_required: { label: '확인 필요' },
-  voice_ready: { label: '음성 생성됨' },
-  sfx_check: { label: '효과음 확인' },
-  analyzing: { label: '분석 중', badge: '대기' },
+  review_required: { label: '재생성 필요' },
+  voice_ready: { label: '음성 생성됨', badge: '확인' },
+  analyzing: { label: '음성 생성 중', badge: '대기' },
 };
-const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음' };
-const SOURCE_LABEL = { manuscript: '원고 텍스트', ai: 'AI 생성', drawn: '그려진 글자' };
+const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음', ignore: '읽지 않음' };
+const SOURCE_LABEL = { manuscript: '원고 텍스트', drawn: '그려진 글자', alt: '이미지 설명', preset: '효과음 프리셋' };
+const LINE_KIND_LABEL = { narration: '원문 나레이션', sfx_text: '효과음 글자', ignore: '읽지 않음' };
 const TABS = [
-  { key: 'all', label: '전체', types: ['narration', 'description', 'dialogue', 'sfx'] },
+  { key: 'all', label: '전체', types: ['narration', 'description', 'dialogue', 'sfx', 'ignore'] },
   { key: 'text', label: '텍스트', types: ['narration', 'dialogue'] },
   { key: 'description', label: '화면해설', types: ['description'] },
   { key: 'sfx', label: '효과음', types: ['sfx'] },
 ];
 const WAVEFORM = [8, 14, 10, 18, 12, 16, 8, 13];
-const TIMELINE_WINDOW = 36; // 눈금 00:00~00:35가 들어가는 표시 구간(초)
 const PREVIEW_ZOOMS = [50, 75, 100, 125, 150];
 const TIMELINE_ZOOMS = [50, 75, 100, 150, 200];
 
@@ -41,6 +34,7 @@ const state = {
   itemId: null,
   tab: 'all',
   time: 0,
+  window: 36,
   playing: false,
   previewZoom: 75,
   timelineZoom: 100,
@@ -74,6 +68,8 @@ function formatClock(iso) {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+const sceneName = (number) => `장면 ${String(number).padStart(2, '0')}`;
+
 function itemLabel(item) {
   if (item.type !== 'dialogue') return TYPE_LABEL[item.type];
   const speaker = state.speakers.find((s) => s.id === item.speakerId);
@@ -81,7 +77,7 @@ function itemLabel(item) {
 }
 
 function itemText(item) {
-  if (item.type === 'sfx' && item.sfx) return `프리셋 · ${item.sfx.preset} · 볼륨 ${item.sfx.volume}%`;
+  if (item.editable === 'cue' && item.sfx) return `프리셋 · ${item.sfx.preset} · 볼륨 ${item.sfx.volume}%`;
   return item.text;
 }
 
@@ -104,17 +100,17 @@ function renderScenes() {
     'scene-count': `${scenes.length}개`,
     'review-summary': `검수 ${review.reviewedCount}/${scenes.length} · 문제 장면 ${review.problemCount}개`,
   });
-  setProgress($('#scene-progress'), Math.round((review.reviewedCount / scenes.length) * 100));
+  setProgress($('#scene-progress'), scenes.length ? Math.round((review.reviewedCount / scenes.length) * 100) : 0);
 
   $('#scene-list').replaceChildren(...scenes.map((scene) => {
     const li = clone('scene-card');
     const card = li.querySelector('.scene-card');
     const status = SCENE_STATUS[scene.status] ?? { label: scene.status };
     fillSlots(li, {
-      name: `장면 ${String(scene.number).padStart(2, '0')}`,
+      name: sceneName(scene.number),
       title: scene.title,
       status: status.label,
-      badge: status.badge ?? `수정 ${scene.issueCount}`,
+      badge: scene.status !== 'done' && scene.issueCount ? `수정 ${scene.issueCount}` : status.badge ?? '',
     });
     card.dataset.sceneId = scene.id;
     if (scene.id === state.sceneId) card.setAttribute('aria-current', 'true');
@@ -122,39 +118,45 @@ function renderScenes() {
   }));
 }
 
-// ── 원고 미리보기 ──────────────────────────────────────
+// ── 원고 미리보기: 원고 이미지 위에 감지 영역(bbox)을 번호로 표시 ─────────
 
 function renderPreview() {
-  const items = new Map(state.scene.items.map((item) => [item.id, item]));
-  const panels = state.scene.panels.map((panel) => {
-    const el = document.createElement('div');
-    el.className = 'manuscript__panel';
-    if (panel.caption) {
-      const caption = document.createElement('span');
-      caption.textContent = panel.caption;
-      el.append(caption);
-    }
-    if (panel.character) {
-      el.classList.add('manuscript__panel--character');
-      const figure = document.createElement('span');
-      figure.className = 'manuscript__character';
-      figure.setAttribute('aria-hidden', 'true');
-      el.append(figure);
-    }
-    for (const id of panel.items) {
-      const item = items.get(id);
-      if (!item) continue;
-      const ocr = clone('ocr-item');
-      ocr.dataset.type = item.type;
-      ocr.dataset.itemId = item.id;
-      if (item.id === state.itemId) ocr.setAttribute('aria-current', 'true');
-      const text = item.type === 'dialogue' ? `“${item.text}”` : item.text;
-      fillSlots(ocr, { number: item.number, label: itemLabel(item), text });
-      el.append(ocr);
-    }
-    return el;
-  });
-  $('#manuscript').replaceChildren(...panels);
+  const { image, items } = state.scene;
+  const page = document.createElement('div');
+  page.className = 'page';
+
+  if (image?.url) {
+    const img = document.createElement('img');
+    img.src = image.url;
+    img.alt = `${sceneName(state.scene.number)} 원고`;
+    img.width = image.width;
+    img.height = image.height;
+    page.append(img);
+  }
+
+  for (const item of items) {
+    if (!item.bbox) continue;
+    const marker = document.createElement('button');
+    marker.type = 'button';
+    marker.className = item.editable === 'cue' ? 'ocr-marker ocr-marker--cue' : 'ocr-marker';
+    marker.dataset.type = item.type;
+    marker.dataset.itemId = item.id;
+    marker.setAttribute('aria-label', `${item.number}번 ${itemLabel(item)}: ${itemText(item)}`);
+    if (item.id === state.itemId) marker.setAttribute('aria-current', 'true');
+    Object.assign(marker.style, {
+      left: `${item.bbox.x * 100}%`,
+      top: `${item.bbox.y * 100}%`,
+      width: `${item.bbox.w * 100}%`,
+      height: `${item.bbox.h * 100}%`,
+    });
+    const badge = document.createElement('span');
+    badge.className = 'number-badge';
+    badge.textContent = item.number;
+    marker.append(badge);
+    page.append(marker);
+  }
+
+  $('#manuscript').replaceChildren(page);
   applyPreviewZoom();
 }
 
@@ -167,23 +169,27 @@ function applyPreviewZoom() {
 
 // ── 장면 편집 ─────────────────────────────────────────
 
-function kindOptions() {
+/** 대사 종류·화자 선택지. 값은 명세의 kind와 character_id */
+function lineKindOptions() {
   return [
-    ['narration', TYPE_LABEL.narration],
-    ['description', TYPE_LABEL.description],
+    ['narration', LINE_KIND_LABEL.narration],
     ...state.speakers.map((s) => [`dialogue:${s.id}`, `${s.name} · 대사`]),
-    ['sfx', TYPE_LABEL.sfx],
+    ['sfx_text', LINE_KIND_LABEL.sfx_text],
+    ['ignore', LINE_KIND_LABEL.ignore],
   ];
 }
 
 function itemActions(item) {
-  const actions = [];
-  if (item.type === 'sfx') {
-    actions.push(button('프리셋 변경', 'button', { 'data-pending': '효과음 설정', 'aria-haspopup': 'dialog' }));
-    actions.push(button('볼륨 조절', 'button', { 'data-pending': '효과음 설정', 'aria-haspopup': 'dialog' }));
-    return actions;
+  if (item.editable === 'cue') {
+    return [
+      button('프리셋 변경', 'button', { 'data-pending': '효과음 설정', 'aria-haspopup': 'dialog' }),
+      button('볼륨 조절', 'button', { 'data-pending': '효과음 설정', 'aria-haspopup': 'dialog' }),
+    ];
   }
-  actions.push(button('텍스트 수정', 'button', { 'data-pending': '텍스트 수정', 'aria-haspopup': 'dialog' }));
+  if (item.editable === 'alt') {
+    return [button('설명 수정', 'button', { 'data-pending': '화면해설 수정', 'aria-haspopup': 'dialog' })];
+  }
+  const actions = [button('텍스트 수정', 'button', { 'data-pending': '텍스트 수정', 'aria-haspopup': 'dialog' })];
   if (item.ttsStale) {
     const stale = button('', 'stale-button', { 'data-pending': 'TTS 재생성' });
     const dot = document.createElement('img');
@@ -204,18 +210,20 @@ function renderItem(item) {
   fillSlots(li, {
     number: item.number,
     source: SOURCE_LABEL[item.source] ?? '',
-    start: formatDuration(item.start),
+    start: item.start == null ? '' : formatDuration(item.start),
     text: itemText(item),
   });
 
   const kind = li.querySelector('[data-field="kind"]');
-  for (const [value, label] of kindOptions()) kind.append(new Option(label, value));
-  kind.value = item.type === 'dialogue' ? `dialogue:${item.speakerId}` : item.type;
+  if (item.editable === 'line') {
+    for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
+    kind.value = item.kind === 'dialogue' ? `dialogue:${item.speakerId}` : item.kind;
+  } else {
+    kind.append(new Option(TYPE_LABEL[item.type], item.type));
+    kind.disabled = true;
+  }
 
-  const mode = li.querySelector('[data-role="mode"]');
-  mode.hidden = !['narration', 'description'].includes(item.type);
-  li.querySelector('[data-field="playMode"]').value = item.playMode ?? 'separate';
-
+  li.querySelector('[data-action="play"]').hidden = item.start == null;
   li.querySelector('.editor-item__actions').append(...itemActions(item));
   return li;
 }
@@ -223,11 +231,10 @@ function renderItem(item) {
 function renderInspector() {
   const { scene } = state;
   fillSlots(document, {
-    'inspector-title': `장면 ${String(scene.number).padStart(2, '0')} 편집`,
+    'inspector-title': `${sceneName(scene.number)} 편집`,
     'voice-label': scene.voice.label,
   });
 
-  // 탭과 개수
   $('#item-tabs').replaceChildren(...TABS.map((tab) => {
     const count = scene.items.filter((item) => tab.types.includes(item.type)).length;
     return button(`${tab.label} ${count}`, 'tab', {
@@ -237,7 +244,6 @@ function renderInspector() {
     });
   }));
 
-  // 텍스트 세부: 나레이션과 화자별 대사 수
   const pills = [
     ['나레이션', scene.items.filter((i) => i.type === 'narration').length],
     ...state.speakers.map((s) => [`${s.name}_대사`, scene.items.filter((i) => i.type === 'dialogue' && i.speakerId === s.id).length]),
@@ -249,11 +255,9 @@ function renderInspector() {
   });
   $('#sub-filter').replaceChildren('텍스트 세부 ·', ...pills);
 
-  // 항목 목록
   const types = TABS.find((tab) => tab.key === state.tab).types;
   $('#item-list').replaceChildren(...scene.items.filter((item) => types.includes(item.type)).map(renderItem));
 
-  // 나레이션 + 화면해설 통합 제안
   const narration = scene.items.find((i) => i.type === 'narration');
   const description = scene.items.find((i) => i.type === 'description');
   $('#combine-card').hidden = !(narration && description);
@@ -261,7 +265,6 @@ function renderInspector() {
     fillSlots(document, { 'combine-label': `${narration.number}번과 ${description.number}번을 하나의 내레이션으로` });
   }
 
-  // 일괄 재생성
   const staleCount = scene.items.filter((i) => i.ttsStale).length;
   $('#batch-regenerate').hidden = staleCount === 0;
   fillSlots(document, { 'stale-label': `변경된 항목 일괄 재생성 (${staleCount})` });
@@ -275,13 +278,13 @@ function renderInspector() {
 function selectItem(itemId) {
   state.itemId = itemId;
   for (const el of document.querySelectorAll('[data-item-id]')) {
-    el.toggleAttribute('aria-current', el.dataset.itemId === itemId);
     if (el.dataset.itemId === itemId) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
   }
   renderClipsCurrent();
 }
 
-async function selectScene(sceneId) {
+async function selectScene(sceneId, { keepItem = false } = {}) {
   state.sceneId = sceneId;
   renderScenes();
   try {
@@ -290,8 +293,10 @@ async function selectScene(sceneId) {
     toast('장면을 불러오지 못했습니다.');
     return;
   }
-  state.itemId = state.scene.items[0]?.id ?? null;
-  state.tab = 'all';
+  if (!keepItem || !state.scene.items.some((i) => i.id === state.itemId)) {
+    state.itemId = state.scene.items[0]?.id ?? null;
+    state.tab = 'all';
+  }
   const url = new URL(location.href);
   url.searchParams.set('scene', sceneId);
   history.replaceState(null, '', url);
@@ -301,32 +306,43 @@ async function selectScene(sceneId) {
   updatePlayback();
 }
 
-async function changeItem(itemId, patch) {
+/** 서버 데이터를 다시 받아 전체를 다시 그린다. 수정 직후 상태(stale 등)를 서버 기준으로 맞춘다. */
+async function reloadStudio() {
+  state.studio = await getStudio(episodeId);
+  state.speakers = state.studio.speakers;
+  renderHeader();
+  renderTimeline();
+  await selectScene(state.sceneId, { keepItem: true });
+}
+
+async function changeLine(lineId, patch) {
   try {
-    const updated = await updateSceneItem(episodeId, state.sceneId, itemId, patch);
-    const index = state.scene.items.findIndex((i) => i.id === itemId);
-    state.scene.items[index] = { ...state.scene.items[index], ...updated, ...patch, ttsStale: true };
-    renderPreview();
-    renderInspector();
-  } catch {
-    toast('항목을 변경하지 못했습니다.');
+    await updateLine(lineId, patch);
+    await reloadStudio();
+    toast('저장했습니다. 음성을 다시 만들어야 합니다.');
+  } catch (err) {
+    toast(err.message || '항목을 변경하지 못했습니다.');
     renderInspector();
   }
 }
 
 // ── 타임라인 ─────────────────────────────────────────
 
-const percent = (seconds) => `${(seconds / TIMELINE_WINDOW) * 100}%`;
+const percent = (seconds) => `${(seconds / state.window) * 100}%`;
 
 function renderTimeline() {
-  const { tracks } = state.studio.timeline;
+  const { tracks, durationSeconds } = state.studio.timeline;
+  // 5초 단위 눈금이 끝까지 들어가도록 표시 구간을 잡는다.
+  const lastTick = Math.max(5, Math.ceil(durationSeconds / 5) * 5);
+  state.window = lastTick + 1;
+
   $('#track-labels').replaceChildren(...tracks.map((track) => {
     const label = document.createElement('span');
     label.textContent = TYPE_LABEL[track.type];
     return label;
   }));
 
-  $('#ruler').replaceChildren(...Array.from({ length: 8 }, (_, i) => {
+  $('#ruler').replaceChildren(...Array.from({ length: lastTick / 5 + 1 }, (_, i) => {
     const tick = document.createElement('span');
     tick.style.left = percent(i * 5);
     tick.textContent = formatDuration(i * 5);
@@ -338,7 +354,7 @@ function renderTimeline() {
     row.className = 'track';
     row.dataset.type = track.type;
     row.setAttribute('aria-label', `${TYPE_LABEL[track.type]} 트랙`);
-    for (const seconds of [10, 20, 30]) {
+    for (let seconds = 10; seconds < lastTick; seconds += 10) {
       const grid = document.createElement('span');
       grid.className = 'track__grid';
       grid.style.left = percent(seconds);
@@ -374,8 +390,8 @@ function renderTimeline() {
 
 function renderClipsCurrent() {
   for (const clip of document.querySelectorAll('.clip')) {
-    clip.toggleAttribute('aria-current', clip.dataset.clipItem === state.itemId);
     if (clip.dataset.clipItem === state.itemId) clip.setAttribute('aria-current', 'true');
+    else clip.removeAttribute('aria-current');
   }
 }
 
@@ -386,10 +402,11 @@ function applyTimelineZoom() {
   $('#timeline-zoom-in').disabled = state.timelineZoom === TIMELINE_ZOOMS.at(-1);
 }
 
+const allClips = () => state.studio.timeline.tracks.flatMap((t) => t.clips);
+
 /** 현재 시각에 재생 중인 클립 중 가장 늦게 시작한 것 */
 function activeClip() {
-  const clips = state.studio.timeline.tracks.flatMap((t) => t.clips);
-  return clips
+  return allClips()
     .filter((c) => state.time >= c.start && state.time < c.start + c.duration)
     .sort((a, b) => b.start - a.start)[0];
 }
@@ -397,19 +414,21 @@ function activeClip() {
 function updatePlayback() {
   const { durationSeconds } = state.studio.timeline;
   $('#playhead').style.left = percent(state.time);
+  // 맨 앞에서는 시간 표시가 레인 밖으로 잘리지 않게 오른쪽으로 붙인다.
+  $('#playhead').classList.toggle('playhead--start', state.time / state.window < 0.03);
   const clip = activeClip();
-  const item = clip?.itemId && state.scene?.items.find((i) => i.id === clip.itemId);
-  const sceneName = state.scene ? `장면 ${String(state.scene.number).padStart(2, '0')}` : '';
+  const scene = clip && state.studio.scenes.find((s) => state.studio.sceneDetails[s.id]?.items.some((i) => i.id === clip.itemId));
+  const item = scene && state.studio.sceneDetails[scene.id].items.find((i) => i.id === clip.itemId);
   fillSlots(document, {
     time: `${formatDuration(state.time)} / ${formatDuration(durationSeconds)}`,
     'playhead-time': formatDuration(state.time),
-    'now-playing': item ? `${sceneName} · 항목 ${item.number} ${state.playing ? '재생 중' : '선택됨'}` : '',
+    'now-playing': item ? `${sceneName(scene.number)} · 항목 ${item.number} ${state.playing ? '재생 중' : '선택됨'}` : '',
   });
   $('#timeline-play').setAttribute('aria-pressed', String(state.playing));
   $('#timeline-play').setAttribute('aria-label', state.playing ? '일시정지' : '재생');
 }
 
-// 오디오 파일이 아직 없어 재생 위치만 움직인다. 음성 URL이 생기면 <audio>로 바꾼다.
+// 음원 URL(audio.url)이 오면 <audio>로 바꾼다. 지금은 재생 위치만 움직인다.
 let lastFrame;
 function tick(now) {
   if (!state.playing) return;
@@ -469,53 +488,45 @@ function bindEvents() {
     if (!item || event.target.closest('select')) return;
     selectItem(item.dataset.itemId);
     if (event.target.closest('[data-action="play"]')) {
-      const clip = state.studio.timeline.tracks.flatMap((t) => t.clips).find((c) => c.itemId === item.dataset.itemId);
+      const clip = allClips().find((c) => c.itemId === item.dataset.itemId);
       if (clip) seek(clip.start);
       setPlaying(true);
     }
   });
 
   $('#item-list').addEventListener('change', (event) => {
-    const select = event.target.closest('select');
+    const select = event.target.closest('[data-field="kind"]');
     const item = event.target.closest('[data-item-id]');
     if (!select || !item) return;
-    if (select.dataset.field === 'kind') {
-      const [type, speakerId] = select.value.split(':');
-      void changeItem(item.dataset.itemId, speakerId ? { type, speakerId } : { type });
-    } else {
-      void changeItem(item.dataset.itemId, { playMode: select.value });
-    }
+    const [kind, characterId] = select.value.split(':');
+    // 대사가 아닌 종류로 바꾸면 화자를 비운다.
+    void changeLine(item.dataset.itemId, { kind, character_id: characterId ?? null });
   });
 
   $('#manuscript').addEventListener('click', (event) => {
-    const ocr = event.target.closest('[data-item-id]');
-    if (ocr) selectItem(ocr.dataset.itemId);
+    const marker = event.target.closest('[data-item-id]');
+    if (marker) selectItem(marker.dataset.itemId);
   });
 
   $('#complete-review').addEventListener('click', async () => {
     $('#complete-review').disabled = true;
     try {
-      const { review } = await completeSceneReview(episodeId, state.sceneId);
-      const scene = state.studio.scenes.find((s) => s.id === state.sceneId);
-      Object.assign(scene, { status: 'done', issueCount: 0 });
-      state.studio.review = review;
-      renderScenes();
-      renderInspector();
-      toast(`장면 ${String(scene.number).padStart(2, '0')} 검수를 완료했습니다.`);
-    } catch {
+      await completeSceneReview(episodeId, state.sceneId);
+      await reloadStudio();
+      toast(`${sceneName(state.scene.number)} 검수를 완료했습니다.`);
+    } catch (err) {
       $('#complete-review').disabled = false;
-      toast('검수 완료를 저장하지 못했습니다.');
+      toast(err.message || '검수 완료를 저장하지 못했습니다.');
     }
   });
 
+  // 명세상 수정은 항목마다 바로 저장된다. 버튼은 저장 상태를 다시 확인한다.
   $('#save-draft').addEventListener('click', async () => {
     try {
-      const { savedAt } = await saveStudioDraft(episodeId);
-      state.studio.lastSavedAt = savedAt;
-      renderHeader();
-      toast('임시 저장했습니다.');
+      await reloadStudio();
+      toast('수정 내용은 바로 저장됩니다.');
     } catch {
-      toast('임시 저장하지 못했습니다.');
+      toast('저장 상태를 확인하지 못했습니다.');
     }
   });
 
@@ -535,18 +546,19 @@ function bindEvents() {
     event.currentTarget.setAttribute('aria-expanded', String(!body.hidden));
   });
 
-  // 레인을 누르면 그 위치로 이동, 클립을 누르면 해당 항목을 선택
-  $('#timeline-lane').addEventListener('click', (event) => {
+  // 레인을 누르면 그 위치로 이동, 클립을 누르면 해당 장면·항목을 선택
+  $('#timeline-lane').addEventListener('click', async (event) => {
     const clip = event.target.closest('.clip');
-    if (clip) {
-      seek(Number(clip.dataset.start));
-      if (clip.dataset.clipItem && state.scene.items.some((i) => i.id === clip.dataset.clipItem)) {
-        selectItem(clip.dataset.clipItem);
-      }
+    if (!clip) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      seek(((event.clientX - rect.left) / rect.width) * state.window);
       return;
     }
-    const rect = event.currentTarget.getBoundingClientRect();
-    seek(((event.clientX - rect.left) / rect.width) * TIMELINE_WINDOW);
+    seek(Number(clip.dataset.start));
+    const itemId = clip.dataset.clipItem;
+    const scene = state.studio.scenes.find((s) => state.studio.sceneDetails[s.id]?.items.some((i) => i.id === itemId));
+    if (scene && scene.id !== state.sceneId) await selectScene(scene.id);
+    if (itemId) selectItem(itemId);
   });
 
   document.addEventListener('keydown', (event) => {
@@ -565,18 +577,24 @@ async function init() {
     return;
   }
   try {
-    [state.studio, state.speakers] = await Promise.all([getStudio(episodeId), getSpeakers(episodeId)]);
-  } catch {
-    toast('스튜디오를 불러오지 못했습니다. 새로고침해 주세요.');
+    state.studio = await getStudio(episodeId);
+  } catch (err) {
+    toast(err.code === 'EPISODE_STATE_INVALID' ? '아직 검수할 수 없는 회차입니다.' : '스튜디오를 불러오지 못했습니다. 새로고침해 주세요.');
     return;
   }
+  state.speakers = state.studio.speakers;
   state.time = state.studio.timeline.lastPlayheadSeconds ?? 0;
   $('#publish-review').href = `#publish-review-${state.studio.episode.id}`;
   renderHeader();
   renderTimeline();
   const requested = params.get('scene');
-  const first = state.studio.scenes.find((s) => s.status !== 'done') ?? state.studio.scenes[0];
-  await selectScene(state.studio.scenes.some((s) => s.id === requested) ? requested : first.id);
+  const scenes = state.studio.scenes;
+  const first = scenes.find((s) => s.status === 'review_required') ?? scenes.find((s) => s.status !== 'done') ?? scenes[0];
+  if (!first) {
+    toast('원고 이미지가 없습니다.');
+    return;
+  }
+  await selectScene(scenes.some((s) => s.id === requested) ? requested : first.id);
   $('#workspace').setAttribute('aria-busy', 'false');
 }
 
