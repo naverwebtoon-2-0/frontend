@@ -1,0 +1,654 @@
+/* 독자 화면 공통 (Figma R1 33:858 · R2 33:888 · R3 33:911) */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.reader-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-600);
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-600) 48px 48px;
+  zoom: var(--reader-scale, 1);
+}
+
+.reader-main :focus-visible,
+.app-header :focus-visible {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}
+
+.muted {
+  color: var(--studio-text-secondary);
+}
+
+.nav-pending {
+  color: var(--studio-text-muted);
+}
+
+/* 버튼 보조 */
+button.button,
+a.button {
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.reader-main .button {
+  padding: var(--space-300);
+}
+
+.button--secondary {
+  background: var(--studio-bg-hover);
+  border-color: var(--studio-border-default);
+}
+
+.button--primary {
+  color: var(--clova-on-green) !important;
+}
+
+.button[aria-pressed="true"] {
+  background: var(--studio-bg-hover);
+  border-color: var(--clova-green);
+}
+
+/* 표지 자리: 실제 표지가 없으면 작품명으로 채운다. */
+.cover {
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: var(--space-400);
+  border-radius: var(--radius-200);
+  background:
+    radial-gradient(120% 90% at 20% 10%, rgba(5, 214, 134, 0.18), transparent 60%),
+    radial-gradient(90% 80% at 90% 100%, rgba(92, 141, 255, 0.18), transparent 60%),
+    var(--studio-bg-canvas);
+  color: var(--studio-text-primary);
+  font-weight: var(--weight-strong);
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── R1 독자 홈 ─────────────────────────────────── */
+.home-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-400);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  flex: 0 1 720px;
+  height: 48px;
+  padding: 0 var(--space-200) 0 var(--space-400);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.search:focus-within {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--studio-text-secondary);
+}
+
+.search button {
+  padding: var(--space-200) var(--space-300);
+  border: 0;
+  border-radius: var(--radius-100);
+  background: none;
+  color: var(--studio-text-primary);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.quick-actions {
+  display: flex;
+  gap: var(--space-300);
+}
+
+.continue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-800);
+  min-height: 250px;
+  padding: var(--space-800);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+}
+
+.continue__copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-300);
+  max-width: 560px;
+}
+
+.continue__progress {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-100);
+  background: var(--studio-bg-hover);
+}
+
+.continue__progress span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-100);
+  background: var(--clova-green);
+}
+
+.continue .cover {
+  flex: 0 0 300px;
+  height: 190px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.section-heading h2 {
+  font-size: 22px;
+  font-weight: var(--weight-strong);
+}
+
+.webtoon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-600);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.webtoon-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-200);
+  height: 100%;
+  border-radius: var(--radius-200);
+  color: inherit;
+}
+
+.webtoon-card .cover {
+  height: 190px;
+  transition: transform 0.15s ease;
+}
+
+.webtoon-card:hover .cover {
+  transform: translateY(-2px);
+}
+
+.webtoon-card strong {
+  margin-top: var(--space-100);
+}
+
+.empty-state {
+  padding: var(--space-800);
+  border: 1px dashed var(--studio-border-default);
+  border-radius: var(--radius-200);
+  color: var(--studio-text-secondary);
+  text-align: center;
+}
+
+/* ── R2 작품 상세 ────────────────────────────────── */
+.detail-hero {
+  display: flex;
+  gap: var(--space-800);
+  padding: var(--space-800);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.detail-hero .cover {
+  flex: 0 0 240px;
+  height: 236px;
+}
+
+.detail-hero__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-300);
+  max-width: 720px;
+}
+
+.detail-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-300);
+  margin-top: var(--space-200);
+}
+
+.episodes {
+  overflow: hidden;
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.episodes__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-400) var(--space-600);
+}
+
+.episodes__heading h2 {
+  font-size: 22px;
+  font-weight: var(--weight-strong);
+}
+
+.reader-select {
+  position: relative;
+  display: inline-flex;
+}
+
+.reader-select select {
+  appearance: none;
+  padding: var(--space-100) 22px var(--space-100) var(--space-200);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-100);
+  background: var(--studio-bg-hover);
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.reader-select::after {
+  content: "▾";
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  font-size: 10px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.reader-select option {
+  background: var(--studio-bg-surface);
+}
+
+.episode-list--reader .episode-row {
+  padding: 0 var(--space-600);
+}
+
+.episode-list--reader .episode-row:hover {
+  background: var(--studio-bg-elevated);
+}
+
+.episode-row__status a {
+  color: var(--clova-green);
+  font-weight: var(--weight-strong);
+}
+
+.episode-row[data-state="done"] .episode-row__status a {
+  color: var(--studio-text-secondary);
+  font-weight: var(--weight-regular);
+}
+
+.state-pill {
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--studio-bg-hover);
+  color: var(--studio-text-secondary);
+  font-size: 12px;
+}
+
+.episode-row[data-state="listening"] .state-pill {
+  background: rgba(5, 214, 134, 0.12);
+  color: var(--clova-green);
+}
+
+.episode-row[data-state="new"] .state-pill {
+  background: rgba(92, 141, 255, 0.14);
+  color: var(--track-narration);
+}
+
+/* ── R3 감상 플레이어 ────────────────────────────── */
+.player-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 936px) 360px;
+  align-items: start;
+  gap: var(--space-600);
+}
+
+.player-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-400);
+  min-width: 0;
+}
+
+.player-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-400);
+}
+
+.scene-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-600);
+  min-height: 520px;
+  padding: var(--space-800);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+  text-align: center;
+}
+
+.scene-view__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(520px, 100%);
+  height: 250px;
+  overflow: hidden;
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-canvas);
+}
+
+.scene-view__art img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.now-playing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-200);
+  max-width: 760px;
+}
+
+.now-playing__kind {
+  color: var(--clova-green);
+  font-size: var(--text-small);
+  font-weight: var(--weight-strong);
+}
+
+.now-playing__text {
+  font-size: 28px;
+  line-height: 1.35;
+  word-break: keep-all;
+}
+
+.now-playing[data-kind="sfx"] .now-playing__text {
+  color: var(--track-sfx);
+}
+
+.player-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-300);
+  padding: var(--space-400) var(--space-600);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.player-time {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.player-seek {
+  width: 100%;
+  accent-color: var(--clova-green);
+  cursor: pointer;
+}
+
+.player-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-600);
+}
+
+.big-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+  color: var(--studio-text-primary);
+  cursor: pointer;
+}
+
+.big-play:hover {
+  background: var(--studio-bg-hover);
+}
+
+.big-play[aria-pressed="true"] img {
+  display: none;
+}
+
+.big-play[aria-pressed="true"]::after {
+  content: "❚❚";
+  font-size: 16px;
+  letter-spacing: -1px;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-400);
+  padding: var(--space-600);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.settings-panel h2 {
+  font-size: 22px;
+  font-weight: var(--weight-strong);
+}
+
+.reader-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-300);
+}
+
+.reader-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reader-settings__volume {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-100);
+  font-size: var(--text-small);
+}
+
+.reader-settings__volume input {
+  accent-color: var(--clova-green);
+}
+
+.reader-settings__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-300);
+  margin: 0;
+  padding: var(--space-300) 0 0;
+  border: 0;
+}
+
+.reader-settings__toggles label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-200);
+  cursor: pointer;
+}
+
+.reader-settings__toggles input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--clova-green);
+}
+
+.shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-200);
+  margin: 0;
+  padding: var(--space-300);
+  border-radius: var(--radius-100);
+  background: var(--studio-bg-hover);
+  font-size: var(--text-small);
+}
+
+.shortcuts div {
+  display: flex;
+  gap: var(--space-300);
+}
+
+.shortcuts dt {
+  min-width: 92px;
+}
+
+.shortcuts dd {
+  margin: 0;
+}
+
+kbd {
+  padding: 0 4px;
+  border: 1px solid var(--studio-border-default);
+  border-radius: 3px;
+  background: var(--studio-bg-surface);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* 알림 */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 10;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+  font-size: var(--text-small);
+  transform: translateX(-50%);
+}
+
+/* ── 고대비 ─────────────────────────────────────── */
+html.high-contrast {
+  --studio-bg-base: #000;
+  --studio-bg-surface: #000;
+  --studio-bg-elevated: #0d0d0d;
+  --studio-bg-hover: #1a1a1a;
+  --studio-bg-canvas: #000;
+  --studio-bg-sidebar: #000;
+  --studio-border-default: #ffffff;
+  --studio-text-primary: #ffffff;
+  --studio-text-secondary: #ffffff;
+  --studio-text-muted: #d0d0d0;
+  --clova-green: #3dffae;
+}
+
+html.high-contrast .scene-view,
+html.high-contrast .player-controls,
+html.high-contrast .settings-panel,
+html.high-contrast .continue,
+html.high-contrast .detail-hero,
+html.high-contrast .episodes {
+  border: 1px solid #fff;
+}
+
+html.high-contrast :focus-visible {
+  outline: 3px solid #ffd400 !important;
+  outline-offset: 3px !important;
+}
+
+@media (max-width: 1100px) {
+  .player-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .reader-main {
+    padding: var(--space-400);
+  }
+
+  .home-toolbar,
+  .continue,
+  .detail-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .continue .cover,
+  .detail-hero .cover {
+    flex-basis: auto;
+    height: 180px;
+  }
+
+  .quick-actions {
+    flex-wrap: wrap;
+  }
+
+  .now-playing__text {
+    font-size: 22px;
+  }
+
+  .player-buttons {
+    gap: var(--space-300);
+    flex-wrap: wrap;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

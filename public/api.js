@@ -550,3 +550,109 @@ async function waitForJob(jobId, onProgress) {
     await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS));
   }
 }
+
+// ── 독자 화면 (명세 §9 공개 API, 비로그인) ─────────────────────
+
+const FEATURE_LABEL = { description: '화면해설', sfx: '효과음', multilingual: '다국어' };
+
+function adaptPublicSeries(s) {
+  return {
+    id: s.id,
+    title: s.title,
+    description: s.description ?? '',
+    author: s.author_name ?? null,
+    genre: s.genre ?? null,
+    ageRating: s.age_rating ?? null,
+    features: (s.features ?? []).map((f) => FEATURE_LABEL[f] ?? f),
+    status: s.status ?? 'ongoing',
+    coverUrl: s.cover_url ?? null,
+    episodeCount: s.episode_count ?? 0,
+    latestEpisodeNumber: s.latest_episode_number ?? null,
+    updatedAt: s.updated_at ?? null,
+  };
+}
+
+/** 공개 작품 목록. GET /v1/public/series?q= */
+export async function getPublicSeriesList({ q = '' } = {}) {
+  const query = q.trim() ? `?q=${enc(q.trim())}` : '';
+  const { items } = await request(`/v1/public/series${query}`);
+  return items.map(adaptPublicSeries);
+}
+
+/** 작품 상세. GET /v1/public/series/{id} */
+export async function getPublicSeries(seriesId) {
+  return adaptPublicSeries(await request(`/v1/public/series/${enc(seriesId)}`));
+}
+
+/** 게시된 회차 목록. GET /v1/public/series/{id}/episodes */
+export async function getPublicEpisodes(seriesId) {
+  const { items } = await request(`/v1/public/series/${enc(seriesId)}/episodes`);
+  return items.map((e) => ({
+    id: e.id,
+    number: e.number,
+    title: e.title,
+    durationSeconds: e.duration_ms == null ? null : e.duration_ms / 1000,
+    publishedAt: e.published_at ?? null,
+  }));
+}
+
+const DESCRIPTION_SECONDS_PER_CHAR = 0.12;
+
+/**
+ * 감상할 회차. GET /v1/public/episodes/{id} (명세 §9.2)
+ * - 말하는 큐(대사·나레이션)는 순서대로 이어 붙이고, 효과음은 그 자리에서 겹쳐 시작한다.
+ * - 이미지 설명(alt)이 있으면 장면 맨 앞에 화면해설 큐로 넣는다(음원 없음, 글자 수로 길이 추정).
+ * @param {{ includeDescription?: boolean }} options
+ */
+export async function getPublicEpisode(episodeId, { includeDescription = true } = {}) {
+  const data = await request(`/v1/public/episodes/${enc(episodeId)}`);
+  const series = await getPublicSeries(data.series_id);
+  const images = [...data.images].sort((a, b) => a.index - b.index);
+  const byImage = new Map(images.map((img) => [img.index, []]));
+  for (const cue of data.playback.cues) byImage.get(cue.image_index)?.push(cue);
+
+  let cursor = 0;
+  const cues = [];
+  for (const image of images) {
+    if (includeDescription && image.alt) {
+      const duration = Math.max(2, image.alt.length * DESCRIPTION_SECONDS_PER_CHAR);
+      cues.push({ id: `desc_${image.index}`, kind: 'description', imageIndex: image.index, text: image.alt, speaker: null, start: cursor, duration });
+      cursor += duration + CLIP_GAP;
+    }
+    for (const cue of byImage.get(image.index)) {
+      const duration = (cue.duration_ms ?? 0) / 1000;
+      cues.push({
+        id: cue.id,
+        kind: cue.kind,
+        imageIndex: image.index,
+        text: cue.kind === 'sfx' ? cue.label ?? cue.text : cue.text,
+        speaker: cue.speaker ?? null,
+        audioUrl: cue.audio_url ?? null,
+        start: cursor,
+        duration,
+      });
+      if (cue.kind !== 'sfx') cursor += duration + CLIP_GAP;
+    }
+  }
+  // 장면 경계: 장면의 첫 큐 시작 시각
+  const scenes = images.map((img) => ({
+    index: img.index,
+    url: img.url,
+    width: img.width,
+    height: img.height,
+    alt: img.alt ?? '',
+    start: cues.find((c) => c.imageIndex === img.index)?.start ?? null,
+  }));
+  const durationSeconds = Math.max(0, cursor - CLIP_GAP, ...cues.map((c) => c.start + c.duration));
+  return {
+    id: data.id,
+    number: data.number,
+    title: data.title,
+    series,
+    scenes,
+    cues,
+    durationSeconds,
+    prevEpisodeId: data.prev_episode_id,
+    nextEpisodeId: data.next_episode_id,
+  };
+}

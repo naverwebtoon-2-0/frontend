@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>작품 상세 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/reader.css">
+  <script src="/series.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__identity">
+      <a class="app-header__brand" href="/">울림툰</a>
+      <span>작품 탐색</span>
+    </div>
+    <div class="app-header__account">
+      <span class="nav-pending">도움말 · 준비 중</span>
+      <a class="badge badge--link" href="/dashboard" title="작가 화면으로 전환" aria-label="독자 모드, 작가 화면으로 전환">독자 모드</a>
+    </div>
+  </header>
+
+  <main class="reader-main" id="series" aria-busy="true">
+    <div class="load-error" id="load-error" role="alert" hidden>
+      <p data-slot="load-error">작품을 불러오지 못했습니다.</p>
+      <a class="button button--secondary" href="/">작품 목록으로</a>
+    </div>
+
+    <!-- 작품 정보 (Figma 33:891) -->
+    <section class="detail-hero" aria-labelledby="series-title">
+      <div class="cover" id="cover" aria-hidden="true"></div>
+      <div class="detail-hero__copy">
+        <h1 class="heading" id="series-title" data-slot="title">&nbsp;</h1>
+        <p class="text-small muted" data-slot="meta"></p>
+        <p data-slot="description"></p>
+        <p class="text-small muted" data-slot="features"></p>
+        <div class="detail-hero__actions">
+          <a class="button button--primary" id="resume" href="#" hidden data-slot="resume">▶ 이어 듣기</a>
+          <a class="button button--secondary" id="from-first" href="#">1화부터 듣기</a>
+          <button class="button" id="favorite" type="button" aria-pressed="false">♡ 보관함</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 회차 목록 (Figma 33:903) -->
+    <section class="episodes" aria-labelledby="episodes-title">
+      <div class="episodes__heading">
+        <h2 id="episodes-title">회차 목록</h2>
+        <label class="reader-select">
+          <span class="visually-hidden">정렬</span>
+          <select id="sort">
+            <option value="latest">최신순</option>
+            <option value="first">1화부터</option>
+          </select>
+        </label>
+      </div>
+      <ul class="episode-list episode-list--reader" id="episode-list"></ul>
+    </section>
+  </main>
+
+  <template id="episode-row">
+    <li class="episode-row">
+      <div class="episode-row__title">
+        <span class="episode-row__name" data-slot="name"></span>
+        <span class="text-small muted" data-slot="progress"></span>
+      </div>
+      <div class="episode-row__status">
+        <span class="state-pill" data-slot="state"></span>
+        <span class="tabular" data-slot="duration"></span>
+        <a data-slot="action"></a>
+      </div>
+    </li>
+  </template>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

@@ -629,3 +629,19 @@ button.button {
 .button[hidden] {
   display: none;
 }
+
+/* 작가 모드 ↔ 독자 모드 전환 배지 */
+.badge--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.badge--link:hover {
+  background: var(--studio-bg-elevated);
+  outline: 1px solid var(--studio-border-default);
+}
+
+.badge--link:focus-visible {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}

@@ -39,7 +39,11 @@ if (origin) {
     dest: `${url.origin}/v1/$1`,
   });
 }
-routes.push({ src: '^/$', dest: '/index.html' });
+// 서비스 첫 화면은 독자 홈. 백엔드 연결 확인 페이지는 /status
+routes.push({ src: '^/$', dest: '/home.html' });
+routes.push({ src: '^/status$', dest: '/status.html' });
+routes.push({ src: '^/series$', dest: '/series.html' });
+routes.push({ src: '^/viewer$', dest: '/viewer.html' });
 routes.push({ src: '^/dashboard$', dest: '/dashboard.html' });
 routes.push({ src: '^/upload$', dest: '/upload.html' });
 routes.push({ src: '^/processing$', dest: '/processing.html' });

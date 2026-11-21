@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>감상 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/reader.css">
+  <script src="/viewer.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__identity">
+      <a class="app-header__brand" href="/">울림툰</a>
+      <span>작품 탐색</span>
+    </div>
+    <div class="app-header__account">
+      <span class="nav-pending">도움말 · 준비 중</span>
+      <a class="badge badge--link" href="/dashboard" title="작가 화면으로 전환" aria-label="독자 모드, 작가 화면으로 전환">독자 모드</a>
+    </div>
+  </header>
+
+  <main class="reader-main" id="viewer" aria-busy="true">
+    <div class="load-error" id="load-error" role="alert" hidden>
+      <p data-slot="load-error">회차를 불러오지 못했습니다.</p>
+      <a class="button button--secondary" href="/">작품 목록으로</a>
+    </div>
+
+    <div class="player-layout" id="player">
+      <div class="player-column">
+        <div class="player-heading">
+          <div class="page-heading__copy">
+            <h1 class="heading" data-slot="title">&nbsp;</h1>
+            <p class="text-small muted" data-slot="subtitle">화면해설과 대사를 순서대로 재생합니다.</p>
+          </div>
+          <a class="button" id="episode-list" href="/">회차 목록</a>
+        </div>
+
+        <!-- 장면 보기 (Figma 33:920) -->
+        <section class="scene-view" aria-label="지금 장면">
+          <p class="text-small muted" data-slot="scene-count"></p>
+          <div class="scene-view__art">
+            <img id="scene-image" alt="">
+          </div>
+          <div class="now-playing" id="now-playing" aria-live="polite" aria-atomic="true">
+            <span class="now-playing__kind" data-slot="kind"></span>
+            <p class="now-playing__text" data-slot="text"></p>
+            <span class="text-small muted" data-slot="next"></span>
+          </div>
+          <a class="button button--primary" id="next-episode" href="#" hidden>다음 화 듣기</a>
+        </section>
+
+        <!-- 재생 조작 (Figma 33:928) -->
+        <section class="player-controls" aria-label="재생 조작">
+          <div class="player-time" aria-hidden="true">
+            <span data-slot="time-current">00:00</span>
+            <span data-slot="time-total">00:00</span>
+          </div>
+          <input class="player-seek" id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="재생 위치">
+          <div class="player-buttons">
+            <button class="button" id="prev-scene" type="button">이전 장면</button>
+            <button class="button button--secondary" id="back" type="button" aria-label="10초 뒤로">−10초</button>
+            <button class="big-play" id="play" type="button" aria-label="재생" aria-pressed="false">
+              <img src="/icons/play.svg" width="20" height="20" alt="">
+            </button>
+            <button class="button button--secondary" id="forward" type="button" aria-label="10초 앞으로">+10초</button>
+            <button class="button" id="next-scene" type="button">다음 장면</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- 감상 설정 (Figma 33:940) -->
+      <aside class="settings-panel" aria-labelledby="settings-title">
+        <h2 id="settings-title">감상 설정</h2>
+        <div id="settings-form"></div>
+        <button class="button button--secondary" id="toggle-shortcuts" type="button" aria-expanded="true" aria-controls="shortcuts">키보드 단축키 숨기기</button>
+        <dl class="shortcuts" id="shortcuts">
+          <div><dt><kbd>Space</kbd></dt><dd>재생·일시정지</dd></div>
+          <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>10초 이동</dd></div>
+          <div><dt><kbd>Shift</kbd> + <kbd>←</kbd> <kbd>→</kbd></dt><dd>장면 이동</dd></div>
+          <div><dt><kbd>N</kbd></dt><dd>화면해설 다시 듣기</dd></div>
+        </dl>
+      </aside>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
