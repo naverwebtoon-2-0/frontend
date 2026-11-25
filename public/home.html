@@ -19,18 +19,21 @@
     </div>
     <div class="app-header__account">
       <span class="nav-pending">도움말 · 준비 중</span>
-      <a class="badge badge--link" href="/dashboard" title="작가 화면으로 전환" aria-label="독자 모드, 작가 화면으로 전환">독자 모드</a>
+      <a class="badge badge--link" href="/login?next=/dashboard" title="작가 화면으로 전환" aria-label="작가 모드로 전환">작가 모드</a>
     </div>
   </header>
 
   <main class="reader-main" id="home" aria-busy="true">
+    <nav class="reader-nav" aria-label="독자 메뉴">
+      <a href="/" aria-current="page">홈</a><a href="/search">작품 탐색</a><a href="/library">내 서재</a><a href="/history">감상 기록</a>
+    </nav>
     <h1 class="visually-hidden">울림툰 오디오 웹툰</h1>
 
     <!-- 검색과 접근성 빠른 설정 (Figma 33:861) -->
     <div class="home-toolbar">
       <form class="search" role="search" id="search-form">
         <label class="visually-hidden" for="search-input">작품 검색</label>
-        <input id="search-input" name="q" type="search" placeholder="작품명, 작가 또는 장르 검색" autocomplete="off">
+        <input id="search-input" name="q" type="search" placeholder="작품명 검색" autocomplete="off">
         <button type="submit">검색</button>
       </form>
       <div class="quick-actions">
@@ -41,7 +44,7 @@
     </div>
 
     <div class="load-error" id="load-error" role="alert" hidden>
-      <p>작품 목록을 불러오지 못했습니다.</p>
+      <p data-slot="load-error">작품 목록을 불러오지 못했습니다.</p>
       <button class="button button--secondary" id="retry" type="button">다시 시도</button>
     </div>
 
@@ -65,7 +68,7 @@
         <button class="button" id="clear-search" type="button" hidden>검색 지우기</button>
       </div>
       <ul class="webtoon-grid" id="webtoon-grid" aria-live="polite"></ul>
-      <p class="empty-state" id="empty" hidden>검색 결과가 없습니다. 다른 작품명이나 장르로 찾아보세요.</p>
+      <p class="empty-state" id="empty" hidden>검색 결과가 없습니다. 다른 작품명으로 찾아보세요.</p>
     </section>
   </main>
 

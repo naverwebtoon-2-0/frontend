@@ -66,6 +66,12 @@ function allProgress() {
   return read(KEYS.progress, {});
 }
 
+/** 최근 감상 기록 전체. 최신 활동 순으로 정렬해 내 서재·감상 기록에서 쓴다. */
+export function getAllProgress() {
+  return Object.values(allProgress())
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
 export function getProgress(episodeId) {
   return allProgress()[episodeId] ?? null;
 }
@@ -78,9 +84,7 @@ export function saveProgress(entry) {
 
 /** 가장 최근에 듣던(끝나지 않은) 회차 */
 export function getLatestProgress() {
-  return Object.values(allProgress())
-    .filter((p) => !p.completed)
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0] ?? null;
+  return getAllProgress().find((p) => !p.completed) ?? null;
 }
 
 /** 작품에서 마지막으로 들은 회차 */
@@ -94,6 +98,10 @@ export function getSeriesProgress(seriesId) {
 
 export function isFavorite(seriesId) {
   return read(KEYS.favorites, []).includes(seriesId);
+}
+
+export function getFavoriteIds() {
+  return read(KEYS.favorites, []);
 }
 
 export function toggleFavorite(seriesId) {

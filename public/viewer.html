@@ -18,11 +18,14 @@
     </div>
     <div class="app-header__account">
       <span class="nav-pending">도움말 · 준비 중</span>
-      <a class="badge badge--link" href="/dashboard" title="작가 화면으로 전환" aria-label="독자 모드, 작가 화면으로 전환">독자 모드</a>
+      <a class="badge badge--link" href="/login?next=/dashboard" title="작가 화면으로 전환" aria-label="작가 모드로 전환">작가 모드</a>
     </div>
   </header>
 
   <main class="reader-main" id="viewer" aria-busy="true">
+    <nav class="reader-nav" aria-label="독자 메뉴">
+      <a href="/">홈</a><a href="/search">작품 탐색</a><a href="/library">내 서재</a><a href="/history">감상 기록</a>
+    </nav>
     <div class="load-error" id="load-error" role="alert" hidden>
       <p data-slot="load-error">회차를 불러오지 못했습니다.</p>
       <a class="button button--secondary" href="/">작품 목록으로</a>
@@ -71,6 +74,15 @@
           </div>
           <a class="button button--primary" id="next-episode" href="#" hidden>다음 화 듣기</a>
           <button class="button button--secondary" id="cancel-auto-next" type="button" hidden>다음 화 자동 재생 취소</button>
+        </section>
+
+        <section class="transcript-panel" aria-labelledby="transcript-title">
+          <div class="section-heading">
+            <div><h2 id="transcript-title">전체 대본</h2><p class="text-small muted">화자와 효과음 설명을 재생 순서대로 확인합니다.</p></div>
+            <button class="button button--secondary" id="toggle-transcript" type="button" aria-expanded="false" aria-controls="transcript-list">대본 보기</button>
+          </div>
+          <ol class="transcript-list" id="transcript-list" hidden></ol>
+          <p class="load-error" id="transcript-error" role="alert" hidden></p>
         </section>
       </div>
 
