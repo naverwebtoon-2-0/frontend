@@ -15,15 +15,13 @@
 
 .login-heading,
 .login-form,
-.login-form label,
-.login-mock {
+.login-form label {
   display: flex;
   flex-direction: column;
 }
 
 .login-heading,
-.login-form,
-.login-mock {
+.login-form {
   gap: var(--space-400);
 }
 
