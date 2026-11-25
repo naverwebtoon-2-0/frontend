@@ -29,6 +29,12 @@ export function formatApproxMinutes(totalSeconds) {
   return `약 ${Math.max(1, Math.round(totalSeconds / 60))}분`;
 }
 
+/** 공개 작품 카드의 회차 수. 최신 회차 번호가 없으면 API가 제공하는 게시 회차 수를 쓴다. */
+export function seriesCountLabel(series) {
+  if (series.status === 'completed' || series.latestEpisodeNumber == null) return `총 ${series.episodeCount}화`;
+  return `최신 ${series.latestEpisodeNumber}화`;
+}
+
 /** data-slot="name" 요소에 텍스트를 채운다. */
 export function fillSlots(root, values) {
   for (const [name, value] of Object.entries(values)) {

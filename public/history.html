@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>감상 기록 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/reader.css"><script src="/history.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header"><div class="app-header__identity"><a class="app-header__brand" href="/">울림툰</a><span>감상 기록</span></div><div class="app-header__account"><a class="badge badge--link" href="/login?next=/dashboard" title="작가 화면으로 전환" aria-label="작가 모드로 전환">작가 모드</a></div></header>
+  <main class="reader-main" id="history">
+    <nav class="reader-nav" aria-label="독자 메뉴"><a href="/">홈</a><a href="/search">작품 탐색</a><a href="/library">내 서재</a><a href="/history" aria-current="page">감상 기록</a></nav>
+    <div class="reader-page-heading"><div><h1 class="heading">감상 기록</h1><p class="muted">이 브라우저에서 감상한 회차와 진행 위치입니다.</p></div></div>
+    <section aria-labelledby="history-title"><div class="section-heading"><h2 id="history-title">최근 감상</h2><span class="text-small muted" id="history-count"></span></div><ul class="history-list" id="history-list"></ul><p class="empty-state" id="empty" hidden>아직 감상 기록이 없습니다. 작품을 골라 첫 회차를 들어보세요.</p></section>
+  </main>
+  <template id="history-item"><li class="history-item"><div><strong data-slot="title"></strong><p class="text-small muted" data-slot="detail"></p></div><div class="history-item__action"><span class="state-pill" data-slot="state"></span><a class="button button--secondary" data-slot="action"></a></div></li></template>
+</body>
+</html>

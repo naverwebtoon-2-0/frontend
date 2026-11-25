@@ -8,6 +8,7 @@ const EPISODE_STATUS = {
   review_required: { label: '검수 필요', updated: (t) => `마지막 수정 ${t}`, action: '계속 편집 ›' },
   processing: { label: 'AI 처리 중', updated: (t) => `${t} 업로드`, action: '진행 보기 ›' },
   published: { label: '게시 완료', updated: (t) => `${t} 게시`, action: '통계 보기 ›' },
+  scheduled: { label: '예약 게시', updated: (t) => `${t} 예약`, action: '예약 확인 ›' },
   failed: { label: '처리 실패', updated: (t) => `${t} 실패`, action: '다시 시도 ›' },
   draft: { label: '작성 중', updated: (t) => `${t} 생성`, action: '업로드 ›' },
 };

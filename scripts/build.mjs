@@ -1,6 +1,10 @@
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 
 const origin = process.env.NCP_BACKEND_ORIGIN;
+const useMock = process.env.NCP_USE_MOCK !== 'false';
+if (!useMock && !origin) {
+  throw new Error('실제 API를 사용하려면 NCP_BACKEND_ORIGIN을 함께 설정하세요.');
+}
 // 원고 업로드(presigned PUT)와 이미지·음원 조회가 가는 Object Storage
 const storage = 'https://kr.object.ncloudstorage.com';
 const csp = [
@@ -42,8 +46,12 @@ if (origin) {
 // 서비스 첫 화면은 독자 홈. 백엔드 연결 확인 페이지는 /status
 routes.push({ src: '^/$', dest: '/home.html' });
 routes.push({ src: '^/status$', dest: '/status.html' });
+routes.push({ src: '^/login$', dest: '/login.html' });
 routes.push({ src: '^/series$', dest: '/series.html' });
 routes.push({ src: '^/viewer$', dest: '/viewer.html' });
+routes.push({ src: '^/search$', dest: '/search.html' });
+routes.push({ src: '^/library$', dest: '/library.html' });
+routes.push({ src: '^/history$', dest: '/history.html' });
 routes.push({ src: '^/dashboard$', dest: '/dashboard.html' });
 routes.push({ src: '^/upload$', dest: '/upload.html' });
 routes.push({ src: '^/processing$', dest: '/processing.html' });
@@ -54,4 +62,8 @@ const output = new URL('../.vercel/output/', import.meta.url);
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 await cp(new URL('../public/', import.meta.url), new URL('static/', output), { recursive: true });
+await writeFile(
+  new URL('static/runtime-config.js', output),
+  `// Generated during build. Do not edit manually.\nexport const runtimeConfig = Object.freeze({ useMock: ${useMock} });\n`,
+);
 await writeFile(new URL('config.json', output), JSON.stringify({ version: 3, routes }, null, 2));

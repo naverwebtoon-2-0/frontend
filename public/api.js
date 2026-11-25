@@ -2,13 +2,17 @@
 // 백엔드 API 명세(초안, /v1)를 호출하고, 응답을 화면에서 쓰는 형태로 변환한다.
 // USE_MOCK이면 fetch 대신 mock-server.js가 명세와 같은 형태로 응답한다.
 import { handle as mockHandle } from './mock-server.js';
+import { runtimeConfig } from './runtime-config.js';
 
-const USE_MOCK = true;
+// NCP_USE_MOCK=false로 빌드한 배포본만 실제 /api/v1 프록시를 사용한다.
+const USE_MOCK = runtimeConfig.useMock !== false;
 const MOCK_DELAY_MS = 250;
 const TIMEOUT_MS = 10_000;
 // 프런트 프록시가 /api/v1/* 를 백엔드 /v1/* 로 전달한다 (scripts/build.mjs).
 const API_BASE = '/api';
 const TOKEN_KEY = 'naverwebtoon.access_token';
+const REFRESH_TOKEN_KEY = 'naverwebtoon.refresh_token';
+let refreshPromise = null;
 
 export class ApiError extends Error {
   constructor(message, status, code = 'UNKNOWN', details = null) {
@@ -20,12 +24,94 @@ export class ApiError extends Error {
   }
 }
 
+/** 현재 화면이 목업 데이터인지 표시하거나 진단할 때 사용한다. */
+export function isMockMode() {
+  return USE_MOCK;
+}
+
+/** 화면에서 그대로 보여 줄 수 있는, 재시도 방법을 포함한 오류 문구. */
+export function apiErrorMessage(error, fallback = '요청을 처리하지 못했습니다.') {
+  if (!(error instanceof ApiError)) return fallback;
+  if (error.code === 'NETWORK_ERROR') return '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.';
+  if (error.status === 401) return '로그인이 필요하거나 로그인 정보가 만료되었습니다.';
+  if (error.status === 403) return '이 작업을 수행할 권한이 없습니다.';
+  if (error.status === 404) return '요청한 정보를 찾을 수 없습니다.';
+  if (error.status >= 500) return '서버에서 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  return error.message || fallback;
+}
+
 function accessToken() {
   try {
     return localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
+}
+
+function refreshToken() {
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeTokens(tokens) {
+  try {
+    localStorage.setItem(TOKEN_KEY, tokens.access_token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+  } catch {
+    throw new ApiError('로그인 정보를 저장할 수 없습니다.', 0, 'STORAGE_UNAVAILABLE');
+  }
+}
+
+export function clearAuthSession() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  } catch {
+    // 저장소를 사용할 수 없는 환경이면 지울 세션도 없다.
+  }
+}
+
+function isProtectedPath(path) {
+  return !path.startsWith('/v1/auth/') && !path.startsWith('/v1/public/');
+}
+
+function redirectToLogin() {
+  if (typeof location === 'undefined' || location.pathname === '/login') return;
+  const next = `${location.pathname}${location.search}${location.hash}`;
+  location.replace(`/login?next=${encodeURIComponent(next)}`);
+}
+
+async function refreshAccessToken() {
+  const token = refreshToken();
+  if (!token) return null;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/v1/auth/refresh`, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ refresh_token: token }),
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          clearAuthSession();
+          return null;
+        }
+        const tokens = await response.json();
+        storeTokens(tokens);
+        return tokens.access_token;
+      } catch {
+        clearAuthSession();
+        return null;
+      }
+    })().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
 }
 
 function toApiError(status, body) {
@@ -45,27 +131,42 @@ async function request(path, { method = 'GET', body, idempotent = false } = {}) 
     return result.body;
   }
 
-  const headers = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json; charset=utf-8';
-  const token = accessToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (idempotent) headers['Idempotency-Key'] = crypto.randomUUID();
+  const requestBody = body === undefined ? undefined : JSON.stringify(body);
+  const idempotencyKey = idempotent ? crypto.randomUUID() : null;
 
-  let response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
+  const send = async (token) => {
+    const headers = { Accept: 'application/json' };
+    if (requestBody !== undefined) headers['Content-Type'] = 'application/json; charset=utf-8';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    return fetch(`${API_BASE}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: requestBody,
       credentials: 'same-origin',
       cache: 'no-store',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+  };
+
+  let response;
+  try {
+    response = await send(accessToken());
+    if (response.status === 401 && isProtectedPath(path)) {
+      const token = await refreshAccessToken();
+      if (token) response = await send(token);
+    }
   } catch {
     throw new ApiError('서버에 연결할 수 없습니다.', 0, 'NETWORK_ERROR');
   }
   const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw toApiError(response.status, data);
+  if (!response.ok) {
+    if (response.status === 401 && isProtectedPath(path)) {
+      clearAuthSession();
+      redirectToLogin();
+    }
+    throw toApiError(response.status, data);
+  }
   return data;
 }
 
@@ -85,6 +186,28 @@ async function putToStorage(upload, file) {
 
 // ── 공통 ─────────────────────────────────────────────
 
+/** 작가 로그인. POST /v1/auth/login */
+export async function loginAuthor({ email, password }) {
+  const tokens = await request('/v1/auth/login', { method: 'POST', body: { email, password } });
+  storeTokens(tokens);
+  const me = await getMe();
+  if (me.role !== 'author') {
+    clearAuthSession();
+    throw new ApiError('작가 계정으로 로그인해주세요.', 403, 'AUTHOR_REQUIRED');
+  }
+  return me;
+}
+
+/** 저장된 refresh token을 폐기하고 로컬 세션을 비운다. */
+export async function logout() {
+  const token = refreshToken();
+  try {
+    if (token && !USE_MOCK) await request('/v1/auth/logout', { method: 'POST', body: { refresh_token: token } });
+  } finally {
+    clearAuthSession();
+  }
+}
+
 /** GET /v1/me */
 export async function getMe() {
   const me = await request('/v1/me');
@@ -101,6 +224,7 @@ async function currentSeries(seriesId) {
 
 const EPISODE_STATUS = {
   needs_review: 'review_required',
+  scheduled: 'scheduled',
   analyzing: 'processing',
   synthesizing: 'processing',
   uploaded: 'processing',
@@ -111,40 +235,48 @@ const EPISODE_STATUS = {
 
 // ── A1 작가 대시보드 ───────────────────────────────────
 
-/**
- * GET /v1/series + GET /v1/series/{id}/episodes 를 묶어 대시보드를 만든다.
- * 명세에 없는 값(문제 장면 수, 남은 시간, 검수 진행률, 회차 길이)은 null.
- */
+/** GET /v1/series/{id}/dashboard 응답을 작가 대시보드 화면 형태로 바꾼다. */
 export async function getDashboard() {
   const series = await currentSeries();
-  const { items: episodes } = await request(`/v1/series/${enc(series.id)}/episodes`);
-  const byState = (...states) => episodes.filter((e) => states.includes(e.state));
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const published = byState('published');
-  const reviewTarget = byState('needs_review').sort((a, b) => b.number - a.number)[0];
+  const monthParts = Object.fromEntries(
+    new Intl.DateTimeFormat('en', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' })
+      .formatToParts(new Date()).map((part) => [part.type, part.value]),
+  );
+  const month = `${monthParts.year}-${monthParts.month}`;
+  const data = await request(`/v1/series/${enc(series.id)}/dashboard?month=${enc(month)}`);
+  const episodes = data.episodes ?? [];
+  const reviewTarget = episodes.filter((e) => e.state === 'needs_review').sort((a, b) => b.number - a.number)[0];
+  const remainingSeconds = episodes
+    .map((e) => e.stats?.processing?.eta_seconds)
+    .filter((value) => value != null)
+    .reduce((sum, value) => sum + value, 0) || null;
 
   return {
     stats: {
-      reviewRequired: { count: byState('needs_review').length, problemScenes: null },
-      processing: { count: byState('uploaded', 'analyzing', 'synthesizing').length, remainingSeconds: null },
-      // 게시 시각 필드가 없어 updated_at으로 이번 달 게시 수를 추정한다.
-      published: { count: published.length, thisMonth: published.filter((e) => new Date(e.updated_at) >= monthStart).length },
+      reviewRequired: {
+        count: episodes.filter((e) => e.state === 'needs_review').length,
+        problemScenes: data.summary.issue_count,
+      },
+      processing: { count: data.summary.in_progress_count, remainingSeconds },
+      published: { count: data.summary.published_count, thisMonth: data.summary.published_this_month },
     },
     currentWork: {
-      id: series.id,
-      title: series.title,
-      meta: [`총 ${episodes.length}화`, `게시 ${published.length}화`].join(' · '),
-      review: reviewTarget ? { episodeId: reviewTarget.id, episodeNumber: reviewTarget.number, progress: null } : null,
+      id: data.series.id,
+      title: data.series.title,
+      meta: [`총 ${data.summary.episode_count}화`, `게시 ${data.summary.published_count}화`].join(' · '),
+      review: reviewTarget ? {
+        episodeId: reviewTarget.id,
+        episodeNumber: reviewTarget.number,
+        progress: Math.round((reviewTarget.stats?.review_progress ?? 0) * 100),
+      } : null,
     },
-    recentEpisodes: [...episodes]
-      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
-      .slice(0, 3)
+    recentEpisodes: episodes.slice(0, 3)
       .map((e) => ({
         id: e.id,
         number: e.number,
         title: e.title,
         status: EPISODE_STATUS[e.state] ?? e.state,
-        durationSeconds: null,
+        durationSeconds: e.stats?.audio_duration_ms == null ? null : e.stats.audio_duration_ms / 1000,
         updatedAt: e.updated_at,
       })),
   };
@@ -536,7 +668,7 @@ export async function publishEpisode(episodeId, { publishAt = null } = {}) {
   });
 }
 
-const JOB_POLL_MS = 1000;
+const JOB_POLL_MS = 2000;
 
 /** 작업이 끝날 때까지 GET /v1/jobs/{id}를 조회한다. 실패·취소면 ApiError */
 async function waitForJob(jobId, onProgress) {
@@ -554,17 +686,23 @@ async function waitForJob(jobId, onProgress) {
 // ── 독자 화면 (명세 §9 공개 API, 비로그인) ─────────────────────
 
 const FEATURE_LABEL = { description: '화면해설', sfx: '효과음', multilingual: '다국어' };
+const GENRE_LABEL = {
+  romance: '로맨스', fantasy: '판타지', action: '액션', drama: '드라마', comedy: '코미디',
+  thriller: '스릴러', daily: '일상', sports: '스포츠', historical: '시대극', etc: '기타',
+};
 
 function adaptPublicSeries(s) {
+  const genreCode = s.genre ?? null;
   return {
     id: s.id,
     title: s.title,
     description: s.description ?? '',
-    author: s.author_name ?? null,
-    genre: s.genre ?? null,
+    author: s.author?.nickname ?? s.author_name ?? null,
+    genre: GENRE_LABEL[genreCode] ?? genreCode,
+    genreCode,
     ageRating: s.age_rating ?? null,
     features: (s.features ?? []).map((f) => FEATURE_LABEL[f] ?? f),
-    status: s.status ?? 'ongoing',
+    status: s.serial_status ?? s.status ?? 'ongoing',
     coverUrl: s.cover_url ?? null,
     episodeCount: s.episode_count ?? 0,
     latestEpisodeNumber: s.latest_episode_number ?? null,
@@ -572,10 +710,25 @@ function adaptPublicSeries(s) {
   };
 }
 
-/** 공개 작품 목록. GET /v1/public/series?q= */
-export async function getPublicSeriesList({ q = '' } = {}) {
-  const query = q.trim() ? `?q=${enc(q.trim())}` : '';
-  const { items } = await request(`/v1/public/series${query}`);
+/** 공개 작품 목록. GET /v1/public/series?q=&genre=&serial_status=&cursor= */
+export async function getPublicSeriesList({ q = '', genre = '', serialStatus = '', cursor = '' } = {}) {
+  const params = new URLSearchParams();
+  if (q.trim()) params.set('q', q.trim());
+  if (genre) params.set('genre', genre);
+  if (serialStatus) params.set('serial_status', serialStatus);
+  const items = [];
+  const seen = new Set();
+  let nextCursor = cursor;
+  do {
+    if (nextCursor) params.set('cursor', nextCursor);
+    else params.delete('cursor');
+    const query = params.size ? `?${params}` : '';
+    const page = await request(`/v1/public/series${query}`);
+    items.push(...page.items);
+    if (!page.next_cursor || seen.has(page.next_cursor)) break;
+    seen.add(page.next_cursor);
+    nextCursor = page.next_cursor;
+  } while (nextCursor);
   return items.map(adaptPublicSeries);
 }
 
@@ -586,12 +739,22 @@ export async function getPublicSeries(seriesId) {
 
 /** 게시된 회차 목록. GET /v1/public/series/{id}/episodes */
 export async function getPublicEpisodes(seriesId) {
-  const { items } = await request(`/v1/public/series/${enc(seriesId)}/episodes`);
+  const items = [];
+  const seen = new Set();
+  let cursor = '';
+  do {
+    const query = cursor ? `?cursor=${enc(cursor)}` : '';
+    const page = await request(`/v1/public/series/${enc(seriesId)}/episodes${query}`);
+    items.push(...page.items);
+    if (!page.next_cursor || seen.has(page.next_cursor)) break;
+    seen.add(page.next_cursor);
+    cursor = page.next_cursor;
+  } while (cursor);
   return items.map((e) => ({
     id: e.id,
     number: e.number,
     title: e.title,
-    durationSeconds: e.duration_ms == null ? null : e.duration_ms / 1000,
+    durationSeconds: (e.audio_duration_ms ?? e.duration_ms) == null ? null : (e.audio_duration_ms ?? e.duration_ms) / 1000,
     publishedAt: e.published_at ?? null,
   }));
 }
@@ -609,17 +772,22 @@ export async function getPublicEpisode(episodeId, { includeDescription = true } 
   const series = await getPublicSeries(data.series_id);
   const images = [...data.images].sort((a, b) => a.index - b.index);
   const byImage = new Map(images.map((img) => [img.index, []]));
-  for (const cue of data.playback.cues) byImage.get(cue.image_index)?.push(cue);
+  for (const cue of data.playback.cues) {
+    if (!includeDescription && cue.kind === 'description') continue;
+    byImage.get(cue.image_index)?.push(cue);
+  }
 
   let cursor = 0;
   const cues = [];
   for (const image of images) {
-    if (includeDescription && image.alt) {
+    const imageCues = byImage.get(image.index);
+    const hasRecordedDescription = imageCues.some((cue) => cue.kind === 'description');
+    if (includeDescription && image.alt && !hasRecordedDescription) {
       const duration = Math.max(2, image.alt.length * DESCRIPTION_SECONDS_PER_CHAR);
       cues.push({ id: `desc_${image.index}`, kind: 'description', imageIndex: image.index, text: image.alt, speaker: null, start: cursor, duration });
       cursor += duration + CLIP_GAP;
     }
-    for (const cue of byImage.get(image.index)) {
+    for (const cue of imageCues) {
       const duration = (cue.duration_ms ?? 0) / 1000;
       cues.push({
         id: cue.id,
@@ -628,6 +796,8 @@ export async function getPublicEpisode(episodeId, { includeDescription = true } 
         text: cue.kind === 'sfx' ? cue.label ?? cue.text : cue.text,
         speaker: cue.speaker ?? null,
         audioUrl: cue.audio_url ?? null,
+        audioRefreshUrl: `/api/v1/public/episodes/${enc(episodeId)}/cues/${enc(cue.id)}/audio`,
+        volume: cue.volume ?? 1,
         start: cursor,
         duration,
       });
@@ -652,7 +822,20 @@ export async function getPublicEpisode(episodeId, { includeDescription = true } 
     scenes,
     cues,
     durationSeconds,
+    audioUrlsExpireAt: data.playback.urls_expire_at ?? null,
     prevEpisodeId: data.prev_episode_id,
     nextEpisodeId: data.next_episode_id,
   };
+}
+
+/** 스크린 리더용 선형 대본. GET /v1/public/episodes/{id}/transcript */
+export async function getPublicTranscript(episodeId) {
+  const { items } = await request(`/v1/public/episodes/${enc(episodeId)}/transcript`);
+  return items.map((item) => ({
+    index: item.index,
+    imageIndex: item.image_index,
+    kind: item.kind,
+    speaker: item.speaker ?? null,
+    text: item.text,
+  }));
 }

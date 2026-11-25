@@ -1,5 +1,5 @@
 // R2 작품 상세·회차 목록
-import { getPublicEpisodes, getPublicSeries } from './api.js';
+import { apiErrorMessage, getPublicEpisodes, getPublicSeries } from './api.js';
 import { episodeLabel, fillSlots, formatDuration } from './common.js';
 import { applyPreferences, getProgress, getSeriesProgress, isFavorite, toggleFavorite } from './reader-store.js';
 
@@ -92,8 +92,8 @@ async function load() {
     }
     renderFavorite();
     renderEpisodes();
-  } catch {
-    fillSlots(document, { 'load-error': '작품을 찾을 수 없습니다.' });
+  } catch (error) {
+    fillSlots(document, { 'load-error': apiErrorMessage(error, '작품을 찾을 수 없습니다.') });
     $('#load-error').hidden = false;
     $('.detail-hero').hidden = true;
     $('.episodes').hidden = true;
