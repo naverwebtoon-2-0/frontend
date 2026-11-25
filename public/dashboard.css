@@ -17,6 +17,11 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.dashboard #dashboard-stats[hidden],
+.dashboard #dashboard-work[hidden] {
+  display: none;
+}
+
 .dashboard .stat-card {
   width: auto;
   height: auto;
@@ -28,6 +33,132 @@
   color: var(--studio-text-primary);
   font-size: 28px;
   letter-spacing: -0.02em;
+}
+
+/* 작품이 없는 신규 작가에게만 표시하는 첫 작품 생성 카드 */
+.dashboard .first-series {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.4fr);
+  gap: clamp(var(--space-600), 5vw, var(--space-800));
+  padding: clamp(var(--space-600), 5vw, var(--space-800));
+}
+
+.dashboard .first-series[hidden] {
+  display: none;
+}
+
+.dashboard .first-series__intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-300);
+}
+
+.dashboard .first-series__intro p,
+.dashboard .first-series__footer p {
+  color: var(--studio-text-secondary);
+}
+
+.dashboard .first-series__eyebrow {
+  padding: 5px 9px;
+  border-radius: 99px;
+  background: rgba(5, 214, 134, 0.12);
+  color: var(--clova-green);
+  font-size: var(--text-small);
+  font-weight: var(--weight-strong);
+}
+
+.dashboard .first-series__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.55fr);
+  gap: var(--space-600) var(--space-400);
+}
+
+.dashboard .first-series__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-200);
+}
+
+.dashboard .first-series__field--wide {
+  grid-column: 1 / -1;
+}
+
+.dashboard .first-series__field label {
+  font-weight: var(--weight-strong);
+}
+
+.dashboard .first-series__control {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+  color: var(--studio-text-primary);
+  font: inherit;
+}
+
+.dashboard .first-series__control:focus-visible {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+  border-color: transparent;
+}
+
+.dashboard .first-series__textarea {
+  min-height: 132px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.dashboard .first-series__label-row,
+.dashboard .first-series__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-400);
+}
+
+.dashboard .first-series__label-row > span,
+.dashboard .first-series__optional,
+.dashboard .first-series__footer p {
+  font-size: var(--text-small);
+  font-weight: var(--weight-regular);
+}
+
+.dashboard .first-series__optional,
+.dashboard .first-series__label-row > span {
+  color: var(--studio-text-muted);
+}
+
+.dashboard .first-series__footer {
+  padding-top: var(--space-200);
+  border-top: 1px solid var(--studio-border-default);
+}
+
+.dashboard .first-series__error {
+  margin: 0;
+  color: #ff8a80;
+}
+
+.dashboard .first-series .button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.dashboard .dashboard-status {
+  margin: 0;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid rgba(5, 214, 134, 0.35);
+  border-radius: var(--radius-200);
+  background: rgba(5, 214, 134, 0.08);
+  color: var(--clova-green);
+}
+
+.dashboard .dashboard-status[hidden],
+.dashboard .first-series__error[hidden] {
+  display: none;
 }
 
 /* 패널 제목: 32px → 작품명 20px, 섹션 제목 18px */
@@ -92,6 +223,12 @@
 
 .dashboard .episode-row:last-child {
   border-bottom: 0;
+}
+
+.dashboard .episode-list__empty {
+  padding: var(--space-400) var(--space-200);
+  color: var(--studio-text-secondary);
+  text-align: center;
 }
 
 .dashboard .episode-row:hover {
@@ -209,6 +346,10 @@
   .dashboard .author-main {
     padding: var(--space-600);
   }
+
+  .dashboard .first-series {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 620px) {
@@ -234,6 +375,23 @@
 
   .dashboard .stats {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard .first-series {
+    padding: var(--space-600);
+  }
+
+  .dashboard .first-series__form {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard .first-series__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard .first-series__footer .button {
+    width: 100%;
   }
 
   .dashboard .stat-card {

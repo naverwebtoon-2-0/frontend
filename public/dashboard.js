@@ -1,6 +1,6 @@
 // A1 작가 대시보드: API 데이터로 화면을 채운다.
 // 명세에 없는 값(null)은 대체 문구를 쓰거나 숨긴다.
-import { getDashboard } from './api.js';
+import { ApiError, apiErrorMessage, createSeries, getDashboard } from './api.js';
 import { episodeLabel, fillSlots, formatApproxMinutes, formatDuration, formatRelative, renderHeader, setProgress } from './common.js';
 
 // 회차 상태별 표시 문구와 다음 행동
@@ -15,8 +15,34 @@ const EPISODE_STATUS = {
 
 const main = document.querySelector('#dashboard');
 const loadError = document.querySelector('#load-error');
+const dashboardStatus = document.querySelector('#dashboard-status');
+const firstSeries = document.querySelector('#first-series');
+const firstSeriesForm = document.querySelector('#first-series-form');
+const firstSeriesError = document.querySelector('#first-series-error');
+const createSeriesButton = document.querySelector('#create-series');
+const seriesTitle = document.querySelector('#series-title');
+const seriesDescription = document.querySelector('#series-description');
+const descriptionCount = document.querySelector('#description-count');
+const dashboardStats = document.querySelector('#dashboard-stats');
+const dashboardWork = document.querySelector('#dashboard-work');
+const primaryAction = document.querySelector('#dashboard-primary-action');
 const rowTemplate = document.querySelector('#episode-row');
 const studioHref = (episodeId) => `/studio?episode=${encodeURIComponent(episodeId)}`;
+
+function showFirstSeries() {
+  firstSeries.hidden = false;
+  dashboardStats.hidden = true;
+  dashboardWork.hidden = true;
+  primaryAction.hidden = true;
+  seriesTitle.focus();
+}
+
+function showDashboard() {
+  firstSeries.hidden = true;
+  dashboardStats.hidden = false;
+  dashboardWork.hidden = false;
+  primaryAction.hidden = false;
+}
 
 function actionHref(episode) {
   if (episode.status === 'review_required') return studioHref(episode.id);
@@ -25,6 +51,13 @@ function actionHref(episode) {
 }
 
 function renderEpisodes(episodes) {
+  if (!episodes.length) {
+    const empty = document.createElement('li');
+    empty.className = 'episode-list__empty';
+    empty.textContent = '아직 업로드한 회차가 없습니다.';
+    document.querySelector('#recent-episodes').replaceChildren(empty);
+    return;
+  }
   const rows = episodes.map((episode) => {
     const status = EPISODE_STATUS[episode.status] ?? { label: episode.status, updated: (t) => t, action: '보기 ›' };
     const row = rowTemplate.content.firstElementChild.cloneNode(true);
@@ -75,7 +108,6 @@ function render({ stats, currentWork, recentEpisodes }) {
   bar.hidden = review?.progress == null;
   if (review?.progress != null) setProgress(bar, review.progress);
 
-  const primaryAction = document.querySelector('#dashboard-primary-action');
   if (review) {
     const href = studioHref(review.episodeId);
     primaryAction.href = href;
@@ -94,14 +126,63 @@ async function load() {
   main.setAttribute('aria-busy', 'true');
   loadError.hidden = true;
   try {
-    render(await getDashboard());
-  } catch {
-    loadError.hidden = false;
+    const data = await getDashboard();
+    showDashboard();
+    render(data);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'NO_SERIES') {
+      showFirstSeries();
+    } else {
+      loadError.hidden = false;
+    }
   } finally {
     main.setAttribute('aria-busy', 'false');
   }
 }
 
+async function handleFirstSeriesSubmit(event) {
+  event.preventDefault();
+  if (!firstSeriesForm.reportValidity()) return;
+
+  const formData = new FormData(firstSeriesForm);
+  const title = String(formData.get('title')).trim();
+  if (!title) {
+    seriesTitle.setCustomValidity('작품명을 입력해주세요.');
+    seriesTitle.reportValidity();
+    return;
+  }
+
+  firstSeriesError.hidden = true;
+  createSeriesButton.disabled = true;
+  createSeriesButton.textContent = '작품 만드는 중…';
+  firstSeriesForm.setAttribute('aria-busy', 'true');
+
+  try {
+    await createSeries({
+      title,
+      genre: String(formData.get('genre')),
+      description: String(formData.get('description')).trim(),
+    });
+    dashboardStatus.textContent = '첫 작품이 생성되었습니다. 이제 첫 회차를 업로드해보세요.';
+    dashboardStatus.hidden = false;
+    showDashboard();
+    await load();
+  } catch (error) {
+    firstSeriesError.textContent = apiErrorMessage(error, '작품을 만들지 못했습니다. 잠시 후 다시 시도해주세요.');
+    firstSeriesError.hidden = false;
+    firstSeriesError.focus();
+  } finally {
+    firstSeriesForm.removeAttribute('aria-busy');
+    createSeriesButton.disabled = false;
+    createSeriesButton.textContent = '첫 작품 만들기';
+  }
+}
+
 document.querySelector('#retry').addEventListener('click', load);
+firstSeriesForm.addEventListener('submit', handleFirstSeriesSubmit);
+seriesTitle.addEventListener('input', () => seriesTitle.setCustomValidity(''));
+seriesDescription.addEventListener('input', () => {
+  descriptionCount.textContent = `${seriesDescription.value.length.toLocaleString('ko-KR')} / 5,000자`;
+});
 void renderHeader();
 void load();

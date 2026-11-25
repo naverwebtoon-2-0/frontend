@@ -265,6 +265,28 @@ const routes = [
   ['GET', /^\/v1\/me$/, () => db.me],
 
   ['GET', /^\/v1\/series$/, () => ({ items: db.series, next_cursor: null })],
+  ['POST', /^\/v1\/series$/, (__, body) => {
+    const title = body.title?.trim();
+    if (!title) throw new MockHttpError(422, 'VALIDATION_ERROR', '작품명을 입력해주세요.', null);
+    if (!body.genre) throw new MockHttpError(422, 'VALIDATION_ERROR', '장르를 선택해주세요.', null);
+    const now = new Date().toISOString();
+    const series = {
+      id: newId('sr'),
+      title,
+      description: body.description?.trim() ?? '',
+      language: body.language ?? 'ko',
+      author_name: db.me.nickname,
+      genre: body.genre,
+      age_rating: null,
+      features: [],
+      status: body.serial_status ?? 'ongoing',
+      cover_url: null,
+      created_at: now,
+      updated_at: now,
+    };
+    db.series.unshift(series);
+    return { ...series, serial_status: series.status };
+  }],
   ['GET', /^\/v1\/series\/([^/]+)$/, ([id]) => db.series.find((s) => s.id === id) ?? notFound()],
   ['GET', /^\/v1\/series\/([^/]+)\/episodes$/, ([id]) => ({
     items: db.episodes.filter((e) => e.series_id === id),

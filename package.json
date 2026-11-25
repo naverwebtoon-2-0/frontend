@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": "24.x" },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node --env-file-if-exists=.env.local scripts/dev.mjs",
     "check": "node --check public/status.js && node --check public/api.js && node --check public/runtime-config.js && node --check public/mock-server.js && node --check public/common.js && node --check public/login.js && node --check public/dashboard.js && node --check public/upload.js && node --check public/processing.js && node --check public/studio.js && node --check public/studio-modals.js && node --check public/publish.js && node --check public/reader-store.js && node --check public/reader-settings.js && node --check public/home.js && node --check public/search.js && node --check public/library.js && node --check public/history.js && node --check public/series.js && node --check public/viewer.js && node --check scripts/dev.mjs && node --check scripts/build.mjs",
     "build": "node scripts/build.mjs"
   }
