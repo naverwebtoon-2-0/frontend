@@ -1,6 +1,6 @@
 // R3 웹툰 감상 플레이어: 화면해설과 대사를 순서대로 재생하고, 장면 이미지와 자막을 함께 보여 준다.
 // 큐의 audio_url이 있으면 종류별 볼륨·속도를 적용해 실제 음원을 재생한다.
-import { getPublicEpisode } from './api.js';
+import { apiErrorMessage, getPublicEpisode, getPublicTranscript } from './api.js';
 import { episodeLabel, fillSlots, formatDuration } from './common.js';
 import { applyPreferences, getProgress, getSettings, saveProgress } from './reader-store.js';
 import { renderSettings } from './reader-settings.js';
@@ -28,6 +28,7 @@ const state = {
 };
 
 let toastTimer;
+let transcriptLoaded = false;
 function toast(message) {
   const el = $('#toast');
   el.textContent = message;
@@ -42,7 +43,9 @@ function announce(message) {
 
 function audioVolume(cue) {
   const key = `${cue.kind}Volume`;
-  return Math.max(0, Math.min(1, (state.settings[key] ?? 100) / 100));
+  const readerVolume = (state.settings[key] ?? 100) / 100;
+  const cueVolume = cue.kind === 'sfx' ? cue.volume ?? 1 : 1;
+  return Math.max(0, Math.min(1, readerVolume * cueVolume));
 }
 
 function hasAudio() {
@@ -73,8 +76,16 @@ function syncAudioTracks({ seeked = false } = {}) {
   for (const cue of active) {
     let audio = state.audioTracks.get(cue.id);
     if (!audio) {
-      audio = new Audio(cue.audioUrl);
+      const expired = state.episode.audioUrlsExpireAt && Date.now() >= new Date(state.episode.audioUrlsExpireAt).getTime();
+      audio = new Audio(expired ? cue.audioRefreshUrl : cue.audioUrl);
       audio.preload = 'auto';
+      audio.addEventListener('error', () => {
+        if (audio.dataset.refreshed || !cue.audioRefreshUrl) return;
+        audio.dataset.refreshed = 'true';
+        audio.src = cue.audioRefreshUrl;
+        audio.load();
+        if (state.playing) void audio.play();
+      });
       state.audioTracks.set(cue.id, audio);
     }
     audio.volume = audioVolume(cue);
@@ -341,6 +352,37 @@ $('#toggle-shortcuts').addEventListener('click', (event) => {
   event.currentTarget.textContent = list.hidden ? '키보드 단축키 보기' : '키보드 단축키 숨기기';
 });
 
+$('#toggle-transcript').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const list = $('#transcript-list');
+  const willOpen = list.hidden;
+  list.hidden = !willOpen;
+  button.setAttribute('aria-expanded', String(willOpen));
+  button.textContent = willOpen ? '대본 숨기기' : '대본 보기';
+  if (!willOpen || transcriptLoaded) return;
+  button.disabled = true;
+  $('#transcript-error').hidden = true;
+  try {
+    const items = await getPublicTranscript(episodeId);
+    list.replaceChildren(...items.map((item) => {
+      const li = document.createElement('li');
+      const speaker = item.speaker || KIND_LABEL[item.kind] || '내용';
+      const strong = document.createElement('strong');
+      strong.textContent = speaker;
+      const text = document.createElement('span');
+      text.textContent = item.text;
+      li.append(strong, text);
+      return li;
+    }));
+    transcriptLoaded = true;
+  } catch (error) {
+    $('#transcript-error').textContent = apiErrorMessage(error, '전체 대본을 불러오지 못했습니다.');
+    $('#transcript-error').hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 document.addEventListener('keydown', (event) => {
   // 버튼·입력 요소에 포커스가 있으면 그 요소의 기본 동작(Space로 누르기 등)을 따른다.
   if (!state.episode || event.target.closest('input, select, textarea, a, button')) return;
@@ -381,8 +423,8 @@ async function init() {
   try {
     await load();
     if (new URLSearchParams(location.search).get('autoplay') === '1') setPlaying(true);
-  } catch {
-    fillSlots(document, { 'load-error': '공개되지 않았거나 없는 회차입니다.' });
+  } catch (error) {
+    fillSlots(document, { 'load-error': apiErrorMessage(error, '공개되지 않았거나 없는 회차입니다.') });
     $('#load-error').hidden = false;
     $('#player').hidden = true;
   } finally {

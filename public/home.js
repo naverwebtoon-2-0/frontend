@@ -1,6 +1,6 @@
 // R1 독자 홈: 검색, 이어 듣기, 새로 올라온 오디오 웹툰, 접근성 빠른 설정
-import { getPublicEpisodes, getPublicSeriesList } from './api.js';
-import { episodeLabel, fillSlots, formatDuration } from './common.js';
+import { apiErrorMessage, getPublicEpisodes, getPublicSeriesList } from './api.js';
+import { episodeLabel, fillSlots, formatDuration, seriesCountLabel } from './common.js';
 import { applyPreferences, getLatestProgress, getSettings, saveSettings } from './reader-store.js';
 import { renderSettings } from './reader-settings.js';
 
@@ -31,7 +31,7 @@ function renderCards(list) {
     fillSlots(li, {
       title: series.title,
       meta: [series.genre, completed ? '완결' : series.features.join('·')].filter(Boolean).join(' · '),
-      count: completed ? `총 ${series.episodeCount}화` : `최신 ${series.latestEpisodeNumber}화`,
+      count: seriesCountLabel(series),
     });
     coverText(li.querySelector('[data-slot="cover"]'), series);
     card.setAttribute('aria-label', `${series.title}, ${li.querySelector('[data-slot="meta"]').textContent}, ${li.querySelector('[data-slot="count"]').textContent}`);
@@ -92,7 +92,8 @@ async function load() {
     $('#clear-search').hidden = !q;
     if (q) $('#continue').hidden = true;
     else await renderContinue(list);
-  } catch {
+  } catch (error) {
+    fillSlots(document, { 'load-error': apiErrorMessage(error, '작품 목록을 불러오지 못했습니다.') });
     $('#load-error').hidden = false;
   } finally {
     $('#home').setAttribute('aria-busy', 'false');
@@ -104,11 +105,9 @@ async function load() {
 $('#search-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const q = $('#search-input').value.trim();
-  const url = new URL(location.href);
+  const url = new URL('/search', location.origin);
   if (q) url.searchParams.set('q', q);
-  else url.searchParams.delete('q');
-  history.pushState(null, '', url);
-  void load();
+  location.assign(url);
 });
 $('#clear-search').addEventListener('click', () => {
   history.pushState(null, '', '/');

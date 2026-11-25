@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>내 서재 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/reader.css"><script src="/library.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header"><div class="app-header__identity"><a class="app-header__brand" href="/">울림툰</a><span>내 서재</span></div><div class="app-header__account"><a class="badge badge--link" href="/login?next=/dashboard" title="작가 화면으로 전환" aria-label="작가 모드로 전환">작가 모드</a></div></header>
+  <main class="reader-main" id="library" aria-busy="true">
+    <nav class="reader-nav" aria-label="독자 메뉴"><a href="/">홈</a><a href="/search">작품 탐색</a><a href="/library" aria-current="page">내 서재</a><a href="/history">감상 기록</a></nav>
+    <div class="reader-page-heading"><div><h1 class="heading">내 서재</h1><p class="muted">보관한 작품과 이어 듣는 회차를 모아봅니다.</p></div></div>
+    <div class="load-error" id="load-error" role="alert" hidden><p data-slot="load-error">내 서재를 불러오지 못했습니다.</p><button class="button button--secondary" id="retry" type="button">다시 시도</button></div>
+    <section aria-labelledby="continue-title"><div class="section-heading"><h2 id="continue-title">이어 듣기</h2></div><ul class="library-list" id="continue-list"></ul><p class="empty-state" id="continue-empty" hidden>이어 듣는 회차가 없습니다. 마음에 드는 작품을 찾아 시작해보세요.</p></section>
+    <section aria-labelledby="saved-title"><div class="section-heading"><h2 id="saved-title">보관한 작품</h2></div><ul class="webtoon-grid" id="saved-grid"></ul><p class="empty-state" id="saved-empty" hidden>보관한 작품이 없습니다. 작품 상세에서 보관함 버튼을 눌러 추가할 수 있습니다.</p></section>
+  </main>
+  <template id="continue-item"><li class="library-item"><div><strong data-slot="title"></strong><p class="text-small muted" data-slot="detail"></p><div class="continue__progress" role="progressbar" aria-label="감상 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div></div><a class="button button--primary" data-slot="action">계속 듣기</a></li></template>
+  <template id="webtoon-card"><li><a class="webtoon-card"><span class="cover" aria-hidden="true" data-slot="cover"></span><strong data-slot="title"></strong><span class="text-small muted" data-slot="meta"></span><span class="text-small muted" data-slot="count"></span></a></li></template>
+</body>
+</html>

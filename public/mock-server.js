@@ -19,7 +19,7 @@ const notFound = () => { throw new MockHttpError(404, 'NOT_FOUND', '리소스를
 
 const db = {
   me: { id: 'us_01', email: 'author@example.com', nickname: '서윤', role: 'author', settings: {} },
-  // author_name·genre·age_rating·features·status·cover_url은 독자 화면용 제안 필드(명세 §4.1·§9.1에 없음)
+  // 내부 목 데이터는 화면 표현에 필요한 값을 보관하고, 공개 API 응답은 실제 백엔드 스키마로 변환한다.
   series: [
     {
       id: 'sr_01', title: '별빛 아래 우리', description: '오랜 친구였던 서윤과 민호가 비 내리는 도시에서 다시 만나는 이야기.', language: 'ko',
@@ -212,6 +212,7 @@ function buildPlayback(episodeId) {
         kind: 'sfx',
         label: presets.get(c.sfx_tag) ?? c.sfx_tag,
         audio_url: null,
+        volume: c.volume,
         duration_ms: c.duration_ms,
       });
     }
@@ -219,7 +220,7 @@ function buildPlayback(episodeId) {
   cues.sort((a, b) => a.image_index - b.image_index || a.y_ratio - b.y_ratio);
   return {
     images: images.map((img) => ({ index: img.index, url: img.url, width: img.width, height: img.height, alt: img.alt })),
-    playback: { version: 0, cues },
+    playback: { version: 0, urls_expire_at: new Date(Date.now() + 6 * 60 * 60_000).toISOString(), cues },
   };
 }
 
@@ -232,10 +233,18 @@ const publishedOf = (seriesId) => db.episodes
 function publicSeries(series) {
   const episodes = publishedOf(series.id);
   const latest = episodes.at(-1);
+  const genreCode = { 로맨스: 'romance', 판타지: 'fantasy', 액션: 'action', 스릴러: 'thriller' }[series.genre] ?? series.genre;
   return {
-    ...series,
+    id: series.id,
+    title: series.title,
+    description: series.description,
+    language: series.language,
+    genre: genreCode,
+    serial_status: series.status,
+    cover_url: series.cover_url,
     episode_count: episodes.length,
-    latest_episode_number: latest?.number ?? null,
+    author: { nickname: series.author_name },
+    created_at: series.created_at ?? ago(60 * 24 * 365),
     updated_at: latest?.updated_at ?? null,
   };
 }
@@ -261,6 +270,49 @@ const routes = [
     items: db.episodes.filter((e) => e.series_id === id),
     next_cursor: null,
   })],
+  ['GET', /^\/v1\/series\/([^/]+)\/dashboard$/, ([id], __, query) => {
+    const series = db.series.find((item) => item.id === id) ?? notFound();
+    const month = query.get('month') ?? new Date().toISOString().slice(0, 7);
+    const episodes = db.episodes
+      .filter((episode) => episode.series_id === id)
+      .sort((a, b) => b.number - a.number)
+      .map((episode) => {
+        const images = imagesOf(episode.id);
+        const imageIds = new Set(images.map((image) => image.id));
+        const issueCount = db.lines.filter((line) => imageIds.has(line.image_id) && ['stale', 'failed'].includes(line.audio?.status)).length;
+        const reviewedCount = images.filter((image) => image.reviewed).length;
+        const processing = ['analyzing', 'synthesizing'].includes(episode.state)
+          ? { job_id: null, step: episode.state === 'analyzing' ? 'structure' : 'dubbing', progress: null, eta_seconds: 95 }
+          : null;
+        return {
+          ...episode,
+          published_at: episode.state === 'published' ? episode.updated_at : null,
+          scheduled_at: episode.state === 'scheduled' ? episode.updated_at : null,
+          stats: {
+            reviewed_image_count: reviewedCount,
+            review_progress: images.length ? reviewedCount / images.length : 0,
+            issue_count: issueCount,
+            issue_breakdown: { low_ocr_confidence: 0, speaker_unknown: 0, audio_failed: 0, audio_stale: issueCount },
+            audio_duration_ms: episode.state === 'published' ? playbackDurationMs(episode.id) : null,
+            processing,
+          },
+        };
+      });
+    return {
+      series: { id: series.id, title: series.title, genre: series.genre, serial_status: series.status },
+      summary: {
+        month,
+        timezone: 'Asia/Seoul',
+        episode_count: episodes.length,
+        published_count: episodes.filter((episode) => episode.state === 'published').length,
+        published_this_month: episodes.filter((episode) => episode.published_at?.slice(0, 7) === month).length,
+        issue_count: episodes.reduce((sum, episode) => sum + episode.stats.issue_count, 0),
+        in_progress_count: episodes.filter((episode) => ['analyzing', 'synthesizing'].includes(episode.state)).length,
+      },
+      episodes,
+      next_cursor: null,
+    };
+  }],
   ['POST', /^\/v1\/series\/([^/]+)\/episodes$/, ([id], body) => {
     const number = Math.max(0, ...db.episodes.filter((e) => e.series_id === id).map((e) => e.number)) + 1;
     const episode = { id: newId('ep'), series_id: id, number, title: body.title, state: 'draft', image_count: 0, updated_at: new Date().toISOString() };
@@ -391,10 +443,14 @@ const routes = [
   // ── 명세 §9 독자용 공개 API (비로그인 허용) ──
   ['GET', /^\/v1\/public\/series$/, (_, __, query) => {
     const q = (query.get('q') ?? '').trim().toLowerCase();
+    const genre = query.get('genre') ?? '';
+    const serialStatus = query.get('serial_status') ?? '';
     const items = db.series
       .map(publicSeries)
       .filter((s) => s.episode_count > 0)
-      .filter((s) => !q || [s.title, s.author_name, s.genre].some((v) => v?.toLowerCase().includes(q)))
+      .filter((s) => !q || s.title.toLowerCase().includes(q))
+      .filter((s) => !genre || s.genre === genre)
+      .filter((s) => !serialStatus || s.serial_status === serialStatus)
       .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
     return { items, next_cursor: null };
   }],
@@ -404,8 +460,7 @@ const routes = [
       id: e.id,
       number: e.number,
       title: e.title,
-      // 제안 필드: 회차 길이, 게시 시각
-      duration_ms: playbackDurationMs(e.id),
+      audio_duration_ms: playbackDurationMs(e.id),
       published_at: e.updated_at,
     })),
     next_cursor: null,
@@ -423,6 +478,19 @@ const routes = [
       ...buildPlayback(id),
       prev_episode_id: siblings[index - 1]?.id ?? null,
       next_episode_id: siblings[index + 1]?.id ?? null,
+    };
+  }],
+  ['GET', /^\/v1\/public\/episodes\/([^/]+)\/transcript$/, ([id]) => {
+    const episode = publicEpisodeOf(id);
+    return {
+      episode_id: id,
+      items: buildPlayback(episode.id).playback.cues.map((cue, index) => ({
+        index: index + 1,
+        image_index: cue.image_index,
+        kind: cue.kind,
+        speaker: cue.speaker ?? null,
+        text: cue.kind === 'sfx' ? `[${cue.label ?? cue.text}]` : cue.text,
+      })),
     };
   }],
 

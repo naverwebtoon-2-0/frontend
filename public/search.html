@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>작품 탐색 · 울림툰</title>
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/reader.css">
+  <script src="/search.js" type="module"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__identity"><a class="app-header__brand" href="/">울림툰</a><span>작품 탐색</span></div>
+    <div class="app-header__account"><a class="badge badge--link" href="/login?next=/dashboard" title="작가 화면으로 전환" aria-label="작가 모드로 전환">작가 모드</a></div>
+  </header>
+  <main class="reader-main" id="search-page" aria-busy="true">
+    <nav class="reader-nav" aria-label="독자 메뉴">
+      <a href="/">홈</a><a href="/search" aria-current="page">작품 탐색</a><a href="/library">내 서재</a><a href="/history">감상 기록</a>
+    </nav>
+    <div class="reader-page-heading">
+      <div><h1 class="heading">작품 탐색</h1><p class="muted">작품명으로 검색하거나 장르와 연재 상태를 선택해보세요.</p></div>
+      <p class="text-small muted" id="data-source" role="status"></p>
+    </div>
+    <form class="search search--wide" role="search" id="search-form">
+      <label class="visually-hidden" for="search-input">작품 검색</label>
+      <input id="search-input" name="q" type="search" placeholder="작품명 검색" autocomplete="off">
+      <button type="submit">검색</button>
+    </form>
+    <section class="discover-filters" aria-label="작품 필터">
+      <div class="filter-chips" id="genre-filter" aria-label="장르 선택">
+        <button type="button" data-genre="" aria-pressed="true">전체</button>
+        <button type="button" data-genre="romance" aria-pressed="false">로맨스</button>
+        <button type="button" data-genre="thriller" aria-pressed="false">스릴러</button>
+        <button type="button" data-genre="fantasy" aria-pressed="false">판타지</button>
+        <button type="button" data-genre="action" aria-pressed="false">액션</button>
+      </div>
+      <label class="reader-select"><span class="visually-hidden">연재 상태</span><select id="status-filter"><option value="">전체 상태</option><option value="ongoing">연재중</option><option value="completed">완결</option></select></label>
+    </section>
+    <div class="load-error" id="load-error" role="alert" hidden><p data-slot="load-error">작품을 불러오지 못했습니다.</p><button class="button button--secondary" id="retry" type="button">다시 시도</button></div>
+    <section aria-labelledby="results-title">
+      <div class="section-heading"><h2 id="results-title">작품</h2><p class="text-small muted" id="result-count" aria-live="polite"></p></div>
+      <ul class="webtoon-grid" id="webtoon-grid"></ul>
+      <p class="empty-state" id="empty" hidden>조건에 맞는 작품이 없습니다. 검색어나 필터를 바꿔보세요.</p>
+    </section>
+  </main>
+  <template id="webtoon-card"><li><a class="webtoon-card"><span class="cover" aria-hidden="true" data-slot="cover"></span><strong data-slot="title"></strong><span class="text-small muted" data-slot="meta"></span><span class="text-small muted" data-slot="count"></span></a></li></template>
+</body>
+</html>

@@ -23,6 +23,39 @@
   zoom: var(--reader-scale, 1);
 }
 
+.reader-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-200);
+  padding-bottom: var(--space-200);
+  border-bottom: 1px solid var(--studio-border-default);
+}
+
+.reader-nav a {
+  padding: var(--space-200) var(--space-300);
+  border-radius: var(--radius-100);
+  color: var(--studio-text-secondary);
+  font-size: var(--text-small);
+  text-decoration: none;
+}
+
+.reader-nav a:hover,
+.reader-nav a[aria-current="page"] {
+  background: var(--studio-bg-hover);
+  color: var(--studio-text-primary);
+}
+
+.reader-page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-400);
+}
+
+.reader-page-heading .heading {
+  margin-bottom: var(--space-200);
+}
+
 .reader-main :focus-visible,
 .app-header :focus-visible {
   outline: 2px solid var(--clova-green);
@@ -101,6 +134,40 @@ a.button {
   border: 1px solid var(--studio-border-default);
   border-radius: var(--radius-200);
   background: var(--studio-bg-surface);
+}
+
+.search--wide {
+  max-width: 800px;
+}
+
+.discover-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-400);
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-200);
+}
+
+.filter-chips button {
+  padding: var(--space-200) var(--space-300);
+  border: 1px solid var(--studio-border-default);
+  border-radius: 999px;
+  background: var(--studio-bg-surface);
+  color: var(--studio-text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.filter-chips button[aria-pressed="true"] {
+  border-color: var(--clova-green);
+  background: rgba(5, 214, 134, 0.12);
+  color: var(--clova-green);
 }
 
 .search:focus-within {
@@ -226,6 +293,49 @@ a.button {
   border-radius: var(--radius-200);
   color: var(--studio-text-secondary);
   text-align: center;
+}
+
+.library-list,
+.history-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+  list-style: none;
+}
+
+.library-item,
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-600);
+  padding: var(--space-400) var(--space-600);
+  border-bottom: 1px solid var(--studio-border-default);
+}
+
+.library-item:last-child,
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.library-item > div:first-child {
+  display: grid;
+  flex: 1;
+  gap: var(--space-200);
+}
+
+.library-item .continue__progress {
+  max-width: 360px;
+}
+
+.history-item__action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-300);
 }
 
 /* ── R2 작품 상세 ────────────────────────────────── */
@@ -428,6 +538,42 @@ a.button {
   background: var(--studio-bg-surface);
 }
 
+.transcript-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-400);
+  padding: var(--space-600);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.transcript-panel h2 {
+  font-size: 22px;
+}
+
+.transcript-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-300);
+  margin: 0;
+  padding-left: 28px;
+}
+
+.transcript-list li {
+  padding-left: var(--space-200);
+}
+
+.transcript-list strong,
+.transcript-list span {
+  display: block;
+}
+
+.transcript-list strong {
+  margin-bottom: var(--space-100);
+  color: var(--clova-green);
+  font-size: var(--text-small);
+}
+
 .player-time {
   display: flex;
   justify-content: space-between;
@@ -624,7 +770,11 @@ html.high-contrast :focus-visible {
 
   .home-toolbar,
   .continue,
-  .detail-hero {
+  .detail-hero,
+  .reader-page-heading,
+  .discover-filters,
+  .library-item,
+  .history-item {
     flex-direction: column;
     align-items: stretch;
   }
