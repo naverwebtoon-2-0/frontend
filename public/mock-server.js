@@ -288,6 +288,13 @@ const routes = [
     return { ...series, serial_status: series.status };
   }],
   ['GET', /^\/v1\/series\/([^/]+)$/, ([id]) => db.series.find((s) => s.id === id) ?? notFound()],
+  ['DELETE', /^\/v1\/series\/([^/]+)$/, ([id]) => {
+    const index = db.series.findIndex((series) => series.id === id);
+    if (index < 0) notFound();
+    db.series.splice(index, 1);
+    db.episodes = db.episodes.filter((episode) => episode.series_id !== id);
+    return null;
+  }],
   ['GET', /^\/v1\/series\/([^/]+)\/episodes$/, ([id]) => ({
     items: db.episodes.filter((e) => e.series_id === id),
     next_cursor: null,
@@ -334,6 +341,13 @@ const routes = [
       episodes,
       next_cursor: null,
     };
+  }],
+  ['DELETE', /^\/v1\/episodes\/([^/]+)$/, ([id]) => {
+    const index = db.episodes.findIndex((episode) => episode.id === id);
+    if (index < 0) notFound();
+    db.episodes.splice(index, 1);
+    delete db.images[id];
+    return null;
   }],
   ['POST', /^\/v1\/series\/([^/]+)\/episodes$/, ([id], body) => {
     const number = Math.max(0, ...db.episodes.filter((e) => e.series_id === id).map((e) => e.number)) + 1;
@@ -548,7 +562,10 @@ export function handle(method, path, body) {
       try {
         const result = structuredClone(handler(match.slice(1), body ?? {}, query));
         persist();
-        return { status: method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200, body: result };
+        const status = method === 'DELETE'
+          ? 204
+          : method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200;
+        return { status, body: result };
       } catch (err) {
         if (err instanceof MockHttpError) return { status: err.status, body: err.body };
         throw err;
