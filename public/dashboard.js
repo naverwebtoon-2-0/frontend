@@ -1,6 +1,13 @@
 // A1 작가 대시보드: API 데이터로 화면을 채운다.
 // 명세에 없는 값(null)은 대체 문구를 쓰거나 숨긴다.
-import { ApiError, apiErrorMessage, createSeries, getDashboard } from './api.js';
+import {
+  ApiError,
+  apiErrorMessage,
+  createSeries,
+  deleteEpisode,
+  deleteSeries,
+  getDashboard,
+} from './api.js';
 import { episodeLabel, fillSlots, formatApproxMinutes, formatDuration, formatRelative, renderHeader, setProgress } from './common.js';
 
 // 회차 상태별 표시 문구와 다음 행동
@@ -16,6 +23,7 @@ const EPISODE_STATUS = {
 const main = document.querySelector('#dashboard');
 const loadError = document.querySelector('#load-error');
 const dashboardStatus = document.querySelector('#dashboard-status');
+const dashboardActionError = document.querySelector('#dashboard-action-error');
 const firstSeries = document.querySelector('#first-series');
 const firstSeriesForm = document.querySelector('#first-series-form');
 const firstSeriesError = document.querySelector('#first-series-error');
@@ -27,7 +35,20 @@ const dashboardStats = document.querySelector('#dashboard-stats');
 const dashboardWork = document.querySelector('#dashboard-work');
 const primaryAction = document.querySelector('#dashboard-primary-action');
 const rowTemplate = document.querySelector('#episode-row');
+const deleteSeriesButton = document.querySelector('#delete-series');
 const studioHref = (episodeId) => `/studio?episode=${encodeURIComponent(episodeId)}`;
+let currentWork = null;
+
+function clearActionMessages() {
+  dashboardStatus.hidden = true;
+  dashboardActionError.hidden = true;
+}
+
+function showActionError(error, fallback) {
+  dashboardActionError.textContent = apiErrorMessage(error, fallback);
+  dashboardActionError.hidden = false;
+  dashboardActionError.focus();
+}
 
 function showFirstSeries() {
   firstSeries.hidden = false;
@@ -71,6 +92,10 @@ function renderEpisodes(episodes) {
     row.querySelector('[data-slot="duration"]').hidden = episode.durationSeconds == null;
     row.dataset.status = episode.status;
     const action = row.querySelector('[data-slot="action"]');
+    const deleteButton = row.querySelector('[data-slot="delete"]');
+    deleteButton.dataset.episodeId = episode.id;
+    deleteButton.dataset.episodeName = episodeLabel(episode.number, episode.title);
+    deleteButton.setAttribute('aria-label', `${episodeLabel(episode.number, episode.title)} 삭제`);
     const href = actionHref(episode);
     if (href) {
       action.href = href;
@@ -86,6 +111,7 @@ function renderEpisodes(episodes) {
 }
 
 function render({ stats, currentWork, recentEpisodes }) {
+  deleteSeriesButton.setAttribute('aria-label', `${currentWork.title} 작품 삭제`);
   const { review } = currentWork;
   fillSlots(main, {
     'review-count': stats.reviewRequired.count,
@@ -127,6 +153,7 @@ async function load() {
   loadError.hidden = true;
   try {
     const data = await getDashboard();
+    currentWork = data.currentWork;
     showDashboard();
     render(data);
   } catch (error) {
@@ -137,6 +164,53 @@ async function load() {
     }
   } finally {
     main.setAttribute('aria-busy', 'false');
+  }
+}
+
+async function handleSeriesDelete() {
+  if (!currentWork) return;
+  const confirmed = window.confirm(
+    `‘${currentWork.title}’ 작품을 삭제할까요?\n삭제한 작품과 관련 데이터는 복구할 수 없습니다.`,
+  );
+  if (!confirmed) return;
+
+  clearActionMessages();
+  deleteSeriesButton.disabled = true;
+  deleteSeriesButton.textContent = '삭제 중…';
+  try {
+    await deleteSeries(currentWork.id);
+    currentWork = null;
+    dashboardStatus.textContent = '작품을 삭제했습니다.';
+    dashboardStatus.hidden = false;
+    await load();
+  } catch (error) {
+    showActionError(error, '작품을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.');
+  } finally {
+    deleteSeriesButton.disabled = false;
+    deleteSeriesButton.textContent = '작품 삭제';
+  }
+}
+
+async function handleEpisodeDelete(button) {
+  const { episodeId, episodeName } = button.dataset;
+  if (!episodeId) return;
+  const confirmed = window.confirm(
+    `‘${episodeName}’ 회차를 삭제할까요?\n삭제한 회차는 복구할 수 없습니다.`,
+  );
+  if (!confirmed) return;
+
+  clearActionMessages();
+  button.disabled = true;
+  button.textContent = '삭제 중…';
+  try {
+    await deleteEpisode(episodeId);
+    dashboardStatus.textContent = `${episodeName} 회차를 삭제했습니다.`;
+    dashboardStatus.hidden = false;
+    await load();
+  } catch (error) {
+    showActionError(error, '회차를 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.');
+    button.disabled = false;
+    button.textContent = '회차 삭제';
   }
 }
 
@@ -179,6 +253,11 @@ async function handleFirstSeriesSubmit(event) {
 }
 
 document.querySelector('#retry').addEventListener('click', load);
+deleteSeriesButton.addEventListener('click', handleSeriesDelete);
+document.querySelector('#recent-episodes').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-slot="delete"]');
+  if (button) void handleEpisodeDelete(button);
+});
 firstSeriesForm.addEventListener('submit', handleFirstSeriesSubmit);
 seriesTitle.addEventListener('input', () => seriesTitle.setCustomValidity(''));
 seriesDescription.addEventListener('input', () => {

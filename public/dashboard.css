@@ -157,8 +157,18 @@
 }
 
 .dashboard .dashboard-status[hidden],
+.dashboard .dashboard-action-error[hidden],
 .dashboard .first-series__error[hidden] {
   display: none;
+}
+
+.dashboard .dashboard-action-error {
+  margin: 0;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid rgba(255, 138, 128, 0.35);
+  border-radius: var(--radius-200);
+  background: rgba(255, 138, 128, 0.08);
+  color: #ff8a80;
 }
 
 /* 패널 제목: 32px → 작품명 20px, 섹션 제목 18px */
@@ -187,6 +197,25 @@
   padding: var(--space-200) var(--space-300);
   border-color: var(--studio-border-default);
   font-size: var(--text-small);
+}
+
+.dashboard .button--danger,
+.dashboard .episode-row__delete {
+  border: 1px solid rgba(255, 138, 128, 0.45);
+  background: transparent;
+  color: #ff8a80;
+}
+
+.dashboard .button--danger:hover,
+.dashboard .episode-row__delete:hover {
+  border-color: #ff8a80;
+  background: rgba(255, 138, 128, 0.08);
+}
+
+.dashboard .button--danger:disabled,
+.dashboard .episode-row__delete:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .dashboard .panel__header .link {
@@ -275,6 +304,15 @@
   min-width: 72px;
   color: var(--studio-text-secondary);
   text-align: right;
+}
+
+.dashboard .episode-row__delete {
+  min-height: 30px;
+  padding: 4px 9px;
+  border-radius: var(--radius-100);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .dashboard .episode-row[data-status="review_required"] .episode-row__status a {

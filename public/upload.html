@@ -7,6 +7,7 @@
   <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/upload.css">
   <script src="/upload.js" type="module"></script>
 </head>
 <body>
@@ -48,6 +49,61 @@
 
       <form class="columns" id="upload-form" novalidate>
         <section class="card panel columns__main" aria-label="회차 정보와 원고">
+          <fieldset class="series-picker">
+            <legend>작품 선택</legend>
+            <p class="text-small series-picker__hint">회차를 추가할 기존 작품을 선택하거나 새 작품을 만들어 시작하세요.</p>
+            <div class="series-picker__modes">
+              <label class="series-picker__mode">
+                <input id="series-mode-existing" name="series-mode" type="radio" value="existing" checked>
+                <span>기존 작품</span>
+              </label>
+              <label class="series-picker__mode">
+                <input id="series-mode-new" name="series-mode" type="radio" value="new">
+                <span>새 작품</span>
+              </label>
+            </div>
+
+            <div class="series-picker__panel" id="existing-series-fields">
+              <label for="series-select">업로드할 작품</label>
+              <span class="select-wrap">
+                <select class="select" id="series-select" name="series-id" aria-describedby="series-status"></select>
+              </span>
+            </div>
+
+            <div class="series-picker__panel series-picker__new" id="new-series-fields" hidden>
+              <div class="field">
+                <label for="new-series-title">새 작품명</label>
+                <input class="input" id="new-series-title" name="new-series-title" type="text"
+                       maxlength="200" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="new-series-genre">대표 장르</label>
+                <span class="select-wrap">
+                  <select class="select" id="new-series-genre" name="new-series-genre">
+                    <option value="">장르 선택</option>
+                    <option value="romance">로맨스</option>
+                    <option value="fantasy">판타지</option>
+                    <option value="action">액션</option>
+                    <option value="drama">드라마</option>
+                    <option value="comedy">코미디</option>
+                    <option value="thriller">스릴러</option>
+                    <option value="daily">일상</option>
+                    <option value="sports">스포츠</option>
+                    <option value="historical">시대극</option>
+                    <option value="etc">기타</option>
+                  </select>
+                </span>
+              </div>
+              <div class="field series-picker__description">
+                <label for="new-series-description">작품 소개 <span class="text-small">선택</span></label>
+                <textarea class="input" id="new-series-description" name="new-series-description"
+                          maxlength="5000" rows="3" placeholder="독자에게 작품의 매력을 소개해주세요."></textarea>
+              </div>
+            </div>
+            <p class="text-small series-picker__status" id="series-status" role="status" aria-live="polite"></p>
+            <p class="upload-zone__error" id="series-error" role="alert" hidden></p>
+          </fieldset>
+
           <div class="field">
             <label for="episode-title">회차 제목</label>
             <input class="input" id="episode-title" name="title" type="text"

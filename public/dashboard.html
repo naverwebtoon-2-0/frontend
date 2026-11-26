@@ -50,6 +50,7 @@
       </div>
 
       <p class="dashboard-status" id="dashboard-status" role="status" hidden></p>
+      <p class="dashboard-action-error" id="dashboard-action-error" role="alert" tabindex="-1" hidden></p>
 
       <section class="card first-series" id="first-series" aria-labelledby="first-series-title" hidden>
         <div class="first-series__intro">
@@ -125,7 +126,7 @@
             <h2 class="subtitle" id="project-title" data-slot="work-title">&nbsp;</h2>
             <p class="text-small" data-slot="work-meta">&nbsp;</p>
           </div>
-          <span class="nav-pending">작품 관리 · 준비 중</span>
+          <button class="button button--danger" id="delete-series" type="button">작품 삭제</button>
         </div>
         <div class="progress" id="review-block">
           <div class="progress__copy">
@@ -159,6 +160,7 @@
         <span data-slot="status"></span>
         <span data-slot="duration"></span>
         <a data-slot="action"></a>
+        <button class="episode-row__delete" data-slot="delete" type="button">회차 삭제</button>
       </div>
     </li>
   </template>

@@ -222,6 +222,12 @@ async function currentSeries(seriesId) {
   return items[0];
 }
 
+/** 작가가 등록한 작품 목록. 업로드 화면의 작품 선택에 사용한다. */
+export async function getAuthorSeries() {
+  const { items } = await request('/v1/series');
+  return items;
+}
+
 /** 신규 작가의 첫 작품 생성. POST /v1/series */
 export async function createSeries({ title, description = '', genre, language = 'ko', serialStatus = 'ongoing' }) {
   return request('/v1/series', {
@@ -235,6 +241,16 @@ export async function createSeries({ title, description = '', genre, language = 
     },
     idempotent: true,
   });
+}
+
+/** 작품 삭제. DELETE /v1/series/{series_id} */
+export async function deleteSeries(seriesId) {
+  return request(`/v1/series/${enc(seriesId)}`, { method: 'DELETE' });
+}
+
+/** 회차 삭제. DELETE /v1/episodes/{episode_id} */
+export async function deleteEpisode(episodeId) {
+  return request(`/v1/episodes/${enc(episodeId)}`, { method: 'DELETE' });
 }
 
 const EPISODE_STATUS = {
