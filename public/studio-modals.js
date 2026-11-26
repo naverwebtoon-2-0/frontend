@@ -7,6 +7,7 @@
 import {
   regenerateLine,
   regenerateStale,
+  updateCharacterName,
   updateCharacterVoice,
   updateImageDescription,
   updateLine,
@@ -63,6 +64,61 @@ export function setupModals(ctx) {
   }
 
   const subtitle = (item) => `${sceneName(state.scene.number)} · ${itemLabel(item)}`;
+
+  // ── 인물 이름 일괄 관리 ───────────────────────────────
+
+  const speakerModal = $('#speaker-modal');
+  const speakerNameList = $('#speaker-name-list');
+  bindSubmit(speakerModal, async () => {
+    const inputs = [...speakerNameList.querySelectorAll('input[data-character-id]')];
+    const names = inputs.map((input) => input.value.trim());
+    if (names.some((name) => !name)) throw new Error('모든 인물의 이름을 입력해주세요.');
+    if (new Set(names).size !== names.length) throw new Error('인물 이름은 서로 다르게 입력해주세요.');
+
+    const updates = inputs
+      .map((input) => ({
+        id: input.dataset.characterId,
+        name: input.value.trim(),
+        previousName: input.dataset.previousName,
+      }))
+      .filter((character) => character.name !== character.previousName);
+    if (!updates.length) return '';
+    await Promise.all(updates.map((character) => updateCharacterName(character.id, character.name)));
+    return `${updates.length}명의 인물 이름을 저장했습니다.`;
+  });
+
+  function openSpeakerNames() {
+    const speakers = state.studio.characters.filter((character) => character.kind !== 'narration');
+    if (!speakers.length) {
+      toast('수정할 인물이 없습니다.');
+      return;
+    }
+    speakerNameList.replaceChildren(...speakers.map((character, index) => {
+      const field = document.createElement('label');
+      field.className = 'speaker-name-field';
+      const label = document.createElement('span');
+      label.className = 'speaker-name-field__label';
+      label.textContent = `인물 ${index + 1}`;
+      const input = document.createElement('input');
+      input.className = 'speaker-name-field__input';
+      input.type = 'text';
+      input.maxLength = 100;
+      input.required = true;
+      input.value = character.name;
+      input.dataset.characterId = character.id;
+      input.dataset.previousName = character.name;
+      input.setAttribute('aria-label', `인물 ${index + 1} 이름`);
+      field.append(label, input);
+      if (character.autoNamed) {
+        const status = document.createElement('span');
+        status.className = 'speaker-name-field__status';
+        status.textContent = '자동 지정';
+        field.append(status);
+      }
+      return field;
+    }));
+    open(speakerModal, 'input');
+  }
 
   // ── 텍스트 수정 · 화면해설 수정 ─────────────────────────
 
@@ -294,5 +350,5 @@ export function setupModals(ctx) {
   });
   document.addEventListener('scroll', () => closeMenu(), true);
 
-  return { openText, openVoice, openSfx, openBatch, openMenu, regenerate, staleItems };
+  return { openSpeakerNames, openText, openVoice, openSfx, openBatch, openMenu, regenerate, staleItems };
 }

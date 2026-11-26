@@ -266,32 +266,29 @@ const EPISODE_STATUS = {
 
 // ── A1 작가 대시보드 ───────────────────────────────────
 
-/** GET /v1/series/{id}/dashboard 응답을 작가 대시보드 화면 형태로 바꾼다. */
+/** 모든 작품의 dashboard 응답을 합쳐 작가 대시보드 화면 형태로 바꾼다. */
 export async function getDashboard() {
-  const series = await currentSeries();
+  const { items: series } = await request('/v1/series');
+  if (!series.length) throw new ApiError('등록된 작품이 없습니다.', 404, 'NO_SERIES');
   const monthParts = Object.fromEntries(
     new Intl.DateTimeFormat('en', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' })
       .formatToParts(new Date()).map((part) => [part.type, part.value]),
   );
   const month = `${monthParts.year}-${monthParts.month}`;
-  const data = await request(`/v1/series/${enc(series.id)}/dashboard?month=${enc(month)}`);
-  const episodes = data.episodes ?? [];
-  const reviewTarget = episodes.filter((e) => e.state === 'needs_review').sort((a, b) => b.number - a.number)[0];
-  const remainingSeconds = episodes
+  const dashboards = await Promise.all(series.map((item) => (
+    request(`/v1/series/${enc(item.id)}/dashboard?month=${enc(month)}`)
+  )));
+  const allEpisodes = dashboards.flatMap((data) => data.episodes ?? []);
+  const remainingSeconds = allEpisodes
     .map((e) => e.stats?.processing?.eta_seconds)
     .filter((value) => value != null)
     .reduce((sum, value) => sum + value, 0) || null;
+  const issueCounts = dashboards.map((data) => data.summary.issue_count).filter((value) => value != null);
 
-  return {
-    stats: {
-      reviewRequired: {
-        count: episodes.filter((e) => e.state === 'needs_review').length,
-        problemScenes: data.summary.issue_count,
-      },
-      processing: { count: data.summary.in_progress_count, remainingSeconds },
-      published: { count: data.summary.published_count, thisMonth: data.summary.published_this_month },
-    },
-    currentWork: {
+  const works = dashboards.map((data) => {
+    const episodes = data.episodes ?? [];
+    const reviewTarget = episodes.filter((e) => e.state === 'needs_review').sort((a, b) => b.number - a.number)[0];
+    return {
       id: data.series.id,
       title: data.series.title,
       meta: [`총 ${data.summary.episode_count}화`, `게시 ${data.summary.published_count}화`].join(' · '),
@@ -299,10 +296,9 @@ export async function getDashboard() {
         episodeId: reviewTarget.id,
         episodeNumber: reviewTarget.number,
         progress: Math.round((reviewTarget.stats?.review_progress ?? 0) * 100),
+        updatedAt: reviewTarget.updated_at,
       } : null,
-    },
-    recentEpisodes: episodes.slice(0, 3)
-      .map((e) => ({
+      recentEpisodes: episodes.slice(0, 3).map((e) => ({
         id: e.id,
         number: e.number,
         title: e.title,
@@ -310,6 +306,25 @@ export async function getDashboard() {
         durationSeconds: e.stats?.audio_duration_ms == null ? null : e.stats.audio_duration_ms / 1000,
         updatedAt: e.updated_at,
       })),
+    };
+  });
+
+  return {
+    stats: {
+      reviewRequired: {
+        count: allEpisodes.filter((e) => e.state === 'needs_review').length,
+        problemScenes: issueCounts.length ? issueCounts.reduce((sum, value) => sum + value, 0) : null,
+      },
+      processing: {
+        count: dashboards.reduce((sum, data) => sum + data.summary.in_progress_count, 0),
+        remainingSeconds,
+      },
+      published: {
+        count: dashboards.reduce((sum, data) => sum + data.summary.published_count, 0),
+        thisMonth: dashboards.reduce((sum, data) => sum + data.summary.published_this_month, 0),
+      },
+    },
+    works,
   };
 }
 
@@ -434,6 +449,25 @@ const DEFAULT_SFX_SECONDS = 3;
 
 function truncate(text, max = 9) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** OCR이 이름을 비워 둔 인물에는 중복되지 않는 기본 이름을 붙인다. */
+function withDefaultCharacterNames(characters) {
+  const usedNames = new Set(characters.map((character) => character.name?.trim()).filter(Boolean));
+  let nextNumber = 1;
+  return characters.map((character) => {
+    const currentName = character.name?.trim();
+    if (currentName) return { ...character, name: currentName, auto_named: false };
+    if (character.kind === 'narration') {
+      usedNames.add('나레이션');
+      return { ...character, name: '나레이션', auto_named: true };
+    }
+    while (usedNames.has(`인물 ${nextNumber}`)) nextNumber += 1;
+    const name = `인물 ${nextNumber}`;
+    usedNames.add(name);
+    nextNumber += 1;
+    return { ...character, name, auto_named: true };
+  });
 }
 
 /**
@@ -565,6 +599,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
     characters: studio.characters.map((c) => ({
       id: c.id,
       name: c.name,
+      autoNamed: Boolean(c.auto_named),
       kind: c.kind ?? 'character',
       voiceId: c.voice_id,
       voiceName: voiceName.get(c.voice_id) ?? c.voice_id,
@@ -589,7 +624,19 @@ export async function getStudio(episodeId) {
     request('/v1/sfx-presets'),
   ]);
   const series = await request(`/v1/series/${enc(episode.series_id)}`);
-  const view = adaptStudio({ studio, episode, series, voices: voices.items, presets: presets.items });
+  const characters = withDefaultCharacterNames(studio.characters);
+  const autoNamed = characters.filter((character) => character.auto_named);
+  if (autoNamed.length) {
+    // 자동 이름 저장에 실패해도 스튜디오는 기본 이름으로 계속 사용할 수 있다.
+    await Promise.all(autoNamed.map((character) => updateCharacterName(character.id, character.name))).catch(() => null);
+  }
+  const view = adaptStudio({
+    studio: { ...studio, characters },
+    episode,
+    series,
+    voices: voices.items,
+    presets: presets.items,
+  });
   studioCache.set(episodeId, view);
   return view;
 }
@@ -608,6 +655,14 @@ export async function getScene(episodeId, sceneId) {
  */
 export async function updateLine(lineId, patch) {
   return request(`/v1/lines/${enc(lineId)}`, { method: 'PATCH', body: patch });
+}
+
+/** 인물 이름 변경. PATCH /v1/characters/{id} */
+export async function updateCharacterName(characterId, name) {
+  return request(`/v1/characters/${enc(characterId)}`, {
+    method: 'PATCH',
+    body: { name },
+  });
 }
 
 /** 이미지 수정. 명세에 없는 제안 경로: PATCH /v1/episodes/{id}/images/{image_id} { reviewed, alt } */

@@ -120,40 +120,50 @@
         </li>
       </ul>
 
-      <section class="card panel" id="dashboard-work" aria-labelledby="project-title">
-        <div class="panel__header">
-          <div class="panel__copy">
-            <h2 class="subtitle" id="project-title" data-slot="work-title">&nbsp;</h2>
-            <p class="text-small" data-slot="work-meta">&nbsp;</p>
-          </div>
-          <details class="overflow-menu" id="series-actions">
-            <summary class="overflow-menu__trigger" aria-label="작품 더보기">⋯</summary>
-            <div class="overflow-menu__popup">
-              <button class="overflow-menu__danger" id="delete-series" type="button">작품 삭제</button>
-            </div>
-          </details>
+      <section class="dashboard-works" id="dashboard-works" aria-labelledby="works-title">
+        <div class="dashboard-works__heading">
+          <h2 class="subtitle" id="works-title">내 작품</h2>
+          <span class="text-small" data-slot="works-count"></span>
         </div>
-        <div class="progress" id="review-block">
-          <div class="progress__copy">
-            <span id="progress-label" data-slot="review-label">검수 진행률</span>
-            <span data-slot="review-percent"></span>
-          </div>
-          <p class="current-task__detail text-small" id="review-detail" data-slot="review-detail"></p>
-          <div class="progress__track" id="review-progress" role="progressbar" aria-labelledby="progress-label"
-               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-            <div class="progress__value"></div>
-          </div>
-          <section class="work-episodes" aria-labelledby="recent-title">
-            <div class="panel__header">
-              <h2 class="subtitle" id="recent-title">최근 회차</h2>
-              <span class="nav-pending text-small">전체 보기 · 준비 중</span>
-            </div>
-            <ul class="episode-list" id="recent-episodes"></ul>
-          </section>
-        </div>
+        <div class="work-list" id="work-list"></div>
       </section>
     </main>
   </div>
+
+  <template id="work-card">
+    <article class="card panel work-card">
+      <div class="panel__header">
+        <div class="panel__copy">
+          <h3 class="subtitle work-card__title" data-slot="work-title"></h3>
+          <p class="text-small" data-slot="work-meta"></p>
+        </div>
+        <details class="overflow-menu" data-slot="series-actions">
+          <summary class="overflow-menu__trigger" data-slot="series-more-trigger">⋯</summary>
+          <div class="overflow-menu__popup">
+            <button class="overflow-menu__danger" data-slot="delete-series" type="button">작품 삭제</button>
+          </div>
+        </details>
+      </div>
+      <div class="progress">
+        <div class="progress__copy">
+          <span data-slot="review-label">검수 진행률</span>
+          <span data-slot="review-percent"></span>
+        </div>
+        <p class="current-task__detail text-small" data-slot="review-detail"></p>
+        <div class="progress__track" data-slot="review-progress" role="progressbar"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="검수 진행률">
+          <div class="progress__value"></div>
+        </div>
+        <section class="work-episodes">
+          <div class="panel__header">
+            <h4 class="subtitle work-card__recent-title">최근 회차</h4>
+            <span class="nav-pending text-small">전체 보기 · 준비 중</span>
+          </div>
+          <ul class="episode-list" data-slot="recent-episodes"></ul>
+        </section>
+      </div>
+    </article>
+  </template>
 
   <template id="episode-row">
     <li class="episode-row">

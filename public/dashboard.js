@@ -32,12 +32,12 @@ const seriesTitle = document.querySelector('#series-title');
 const seriesDescription = document.querySelector('#series-description');
 const descriptionCount = document.querySelector('#description-count');
 const dashboardStats = document.querySelector('#dashboard-stats');
-const dashboardWork = document.querySelector('#dashboard-work');
+const dashboardWorks = document.querySelector('#dashboard-works');
+const workList = document.querySelector('#work-list');
 const primaryAction = document.querySelector('#dashboard-primary-action');
+const workTemplate = document.querySelector('#work-card');
 const rowTemplate = document.querySelector('#episode-row');
-const deleteSeriesButton = document.querySelector('#delete-series');
 const studioHref = (episodeId) => `/studio?episode=${encodeURIComponent(episodeId)}`;
-let currentWork = null;
 
 function clearActionMessages() {
   dashboardStatus.hidden = true;
@@ -53,7 +53,7 @@ function showActionError(error, fallback) {
 function showFirstSeries() {
   firstSeries.hidden = false;
   dashboardStats.hidden = true;
-  dashboardWork.hidden = true;
+  dashboardWorks.hidden = true;
   primaryAction.hidden = true;
   seriesTitle.focus();
 }
@@ -61,7 +61,7 @@ function showFirstSeries() {
 function showDashboard() {
   firstSeries.hidden = true;
   dashboardStats.hidden = false;
-  dashboardWork.hidden = false;
+  dashboardWorks.hidden = false;
   primaryAction.hidden = false;
 }
 
@@ -71,12 +71,12 @@ function actionHref(episode) {
   return null;
 }
 
-function renderEpisodes(episodes) {
+function renderEpisodes(container, episodes) {
   if (!episodes.length) {
     const empty = document.createElement('li');
     empty.className = 'episode-list__empty';
     empty.textContent = '아직 업로드한 회차가 없습니다.';
-    document.querySelector('#recent-episodes').replaceChildren(empty);
+    container.replaceChildren(empty);
     return;
   }
   const rows = episodes.map((episode) => {
@@ -109,22 +109,20 @@ function renderEpisodes(episodes) {
     }
     return row;
   });
-  document.querySelector('#recent-episodes').replaceChildren(...rows);
+  container.replaceChildren(...rows);
 }
 
-function render({ stats, currentWork, recentEpisodes }) {
-  deleteSeriesButton.setAttribute('aria-label', `${currentWork.title} 작품 삭제`);
-  document.querySelector('#series-actions summary').setAttribute('aria-label', `${currentWork.title} 작품 더보기`);
-  const { review } = currentWork;
-  fillSlots(main, {
-    'review-count': stats.reviewRequired.count,
-    'review-note': stats.reviewRequired.problemScenes == null ? '작가 확인 대기' : `문제 장면 ${stats.reviewRequired.problemScenes}개`,
-    'processing-count': stats.processing.count,
-    'processing-note': stats.processing.remainingSeconds == null ? '분석·음성 생성' : `${formatApproxMinutes(stats.processing.remainingSeconds)} 남음`,
-    'published-count': stats.published.count,
-    'published-note': `이번 달 ${stats.published.thisMonth}개`,
-    'work-title': currentWork.title,
-    'work-meta': currentWork.meta,
+function renderWork(work, index) {
+  const card = workTemplate.content.firstElementChild.cloneNode(true);
+  const { review } = work;
+  const titleId = `work-title-${index}`;
+  const title = card.querySelector('[data-slot="work-title"]');
+  title.id = titleId;
+  card.setAttribute('aria-labelledby', titleId);
+  card.dataset.seriesId = work.id;
+  fillSlots(card, {
+    'work-title': work.title,
+    'work-meta': work.meta,
     'review-label': !review ? '검수할 회차 없음' : review.progress == null ? `${review.episodeNumber}화 검수 대기` : `${review.episodeNumber}화 검수 진행률`,
     'review-percent': review?.progress == null ? '' : `${review.progress}%`,
     'review-detail': !review
@@ -132,23 +130,44 @@ function render({ stats, currentWork, recentEpisodes }) {
       : '장면과 음성을 확인한 뒤 게시 전 확인을 완료하세요.',
   });
 
-  // 검수 진행률은 명세에 아직 없어 값이 있을 때만 막대를 보인다.
-  const bar = document.querySelector('#review-progress');
+  const deleteButton = card.querySelector('[data-slot="delete-series"]');
+  deleteButton.dataset.seriesId = work.id;
+  deleteButton.dataset.seriesTitle = work.title;
+  deleteButton.setAttribute('aria-label', `${work.title} 작품 삭제`);
+  card.querySelector('[data-slot="series-more-trigger"]').setAttribute('aria-label', `${work.title} 작품 더보기`);
+
+  const bar = card.querySelector('[data-slot="review-progress"]');
+  bar.setAttribute('aria-label', `${work.title} 검수 진행률`);
   bar.hidden = review?.progress == null;
   if (review?.progress != null) setProgress(bar, review.progress);
+  renderEpisodes(card.querySelector('[data-slot="recent-episodes"]'), work.recentEpisodes);
+  return card;
+}
 
-  if (review) {
-    const href = studioHref(review.episodeId);
+function render({ stats, works }) {
+  fillSlots(main, {
+    'review-count': stats.reviewRequired.count,
+    'review-note': stats.reviewRequired.problemScenes == null ? '작가 확인 대기' : `문제 장면 ${stats.reviewRequired.problemScenes}개`,
+    'processing-count': stats.processing.count,
+    'processing-note': stats.processing.remainingSeconds == null ? '분석·음성 생성' : `${formatApproxMinutes(stats.processing.remainingSeconds)} 남음`,
+    'published-count': stats.published.count,
+    'published-note': `이번 달 ${stats.published.thisMonth}개`,
+    'works-count': `총 ${works.length}개`,
+  });
+
+  const reviewWork = works.find((work) => work.review);
+  if (reviewWork) {
+    const href = studioHref(reviewWork.review.episodeId);
     primaryAction.href = href;
-    primaryAction.textContent = `${review.episodeNumber}화 검수 계속하기`;
-    primaryAction.setAttribute('aria-label', `${review.episodeNumber}화 검수 계속하기`);
+    primaryAction.textContent = `${reviewWork.review.episodeNumber}화 검수 계속하기`;
+    primaryAction.setAttribute('aria-label', `${reviewWork.title} ${reviewWork.review.episodeNumber}화 검수 계속하기`);
   } else {
     primaryAction.href = '/upload';
     primaryAction.textContent = '＋ 새 회차 업로드';
     primaryAction.setAttribute('aria-label', '새 회차 업로드');
   }
 
-  renderEpisodes(recentEpisodes);
+  workList.replaceChildren(...works.map(renderWork));
 }
 
 async function load() {
@@ -156,7 +175,6 @@ async function load() {
   loadError.hidden = true;
   try {
     const data = await getDashboard();
-    currentWork = data.currentWork;
     showDashboard();
     render(data);
   } catch (error) {
@@ -170,28 +188,28 @@ async function load() {
   }
 }
 
-async function handleSeriesDelete() {
-  if (!currentWork) return;
-  deleteSeriesButton.closest('details').removeAttribute('open');
+async function handleSeriesDelete(button) {
+  const { seriesId, seriesTitle } = button.dataset;
+  if (!seriesId) return;
+  button.closest('details').removeAttribute('open');
   const confirmed = window.confirm(
-    `‘${currentWork.title}’ 작품을 삭제할까요?\n삭제한 작품과 관련 데이터는 복구할 수 없습니다.`,
+    `‘${seriesTitle}’ 작품을 삭제할까요?\n삭제한 작품과 관련 데이터는 복구할 수 없습니다.`,
   );
   if (!confirmed) return;
 
   clearActionMessages();
-  deleteSeriesButton.disabled = true;
-  deleteSeriesButton.textContent = '삭제 중…';
+  button.disabled = true;
+  button.textContent = '삭제 중…';
   try {
-    await deleteSeries(currentWork.id);
-    currentWork = null;
-    dashboardStatus.textContent = '작품을 삭제했습니다.';
+    await deleteSeries(seriesId);
+    dashboardStatus.textContent = `${seriesTitle} 작품을 삭제했습니다.`;
     dashboardStatus.hidden = false;
     await load();
   } catch (error) {
     showActionError(error, '작품을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.');
   } finally {
-    deleteSeriesButton.disabled = false;
-    deleteSeriesButton.textContent = '작품 삭제';
+    button.disabled = false;
+    button.textContent = '작품 삭제';
   }
 }
 
@@ -258,8 +276,12 @@ async function handleFirstSeriesSubmit(event) {
 }
 
 document.querySelector('#retry').addEventListener('click', load);
-deleteSeriesButton.addEventListener('click', handleSeriesDelete);
-document.querySelector('#recent-episodes').addEventListener('click', (event) => {
+workList.addEventListener('click', (event) => {
+  const seriesButton = event.target.closest('[data-slot="delete-series"]');
+  if (seriesButton) {
+    void handleSeriesDelete(seriesButton);
+    return;
+  }
   const button = event.target.closest('[data-slot="delete"]');
   if (button) void handleEpisodeDelete(button);
 });

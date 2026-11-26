@@ -565,6 +565,7 @@ function bindEvents() {
   });
 
   $('#batch-regenerate').addEventListener('click', () => modals.openBatch());
+  $('#manage-speakers').addEventListener('click', () => modals.openSpeakerNames());
 
   $('#item-list').addEventListener('change', (event) => {
     const select = event.target.closest('[data-field="kind"]');

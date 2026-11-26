@@ -419,6 +419,12 @@ body.studio {
   font-weight: var(--weight-regular);
 }
 
+.inspector__speaker-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
 .tabs {
   display: flex;
   gap: var(--space-100);

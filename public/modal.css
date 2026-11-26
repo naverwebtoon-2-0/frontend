@@ -199,6 +199,53 @@ fieldset.modal__field .modal__label {
   font-size: 12px;
 }
 
+.speaker-name-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(360px, 45vh);
+  overflow-y: auto;
+}
+
+.speaker-name-field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.speaker-name-field__label,
+.speaker-name-field__status {
+  color: var(--studio-text-secondary);
+  font-size: 14px;
+}
+
+.speaker-name-field__status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(5, 214, 134, 0.1);
+  color: var(--clova-green);
+  white-space: nowrap;
+}
+
+.speaker-name-field__input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+  color: var(--studio-text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+
+.speaker-name-field__input:focus-visible {
+  border-color: transparent;
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}
+
 .modal__actions {
   display: flex;
   justify-content: flex-end;

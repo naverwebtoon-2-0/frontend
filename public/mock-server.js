@@ -42,8 +42,8 @@ const db = {
   images: {},
   characters: [
     { id: 'ch_narr', name: '나레이션', kind: 'narration', voice_id: 'nara', voice_params: { speed: 0, pitch: 0 } },
-    { id: 'ch_seoyun', name: '서윤', voice_id: 'dain', voice_params: { speed: 0, pitch: 0 } },
-    { id: 'ch_minho', name: '민호', voice_id: 'jinho', voice_params: { speed: 0, pitch: -1 } },
+    { id: 'ch_seoyun', name: '', voice_id: 'dain', voice_params: { speed: 0, pitch: 0 } },
+    { id: 'ch_minho', name: '', voice_id: 'jinho', voice_params: { speed: 0, pitch: -1 } },
   ],
   lines: [],
   sfxCues: [],
@@ -430,9 +430,13 @@ const routes = [
 
   ['PATCH', /^\/v1\/characters\/([^/]+)$/, ([id], body) => {
     const character = db.characters.find((c) => c.id === id) ?? notFound();
+    const affectsAudio = ('voice_id' in body && body.voice_id !== character.voice_id)
+      || ('voice_params' in body && JSON.stringify(body.voice_params) !== JSON.stringify(character.voice_params));
     Object.assign(character, body);
     // 명세 §6.3: 목소리를 바꾸면 그 인물의 모든 대사가 stale
-    for (const l of db.lines.filter((it) => it.character_id === id)) l.audio.status = 'stale';
+    if (affectsAudio) {
+      for (const l of db.lines.filter((it) => it.character_id === id)) l.audio.status = 'stale';
+    }
     return character;
   }],
   ['PATCH', /^\/v1\/sfx-cues\/([^/]+)$/, ([id], body) => Object.assign(db.sfxCues.find((c) => c.id === id) ?? notFound(), body)],
