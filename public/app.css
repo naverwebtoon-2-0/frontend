@@ -74,12 +74,41 @@ h3 {
 }
 
 .app-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-200);
   font-family: var(--font-brand);
-  font-size: var(--text-heading);
+  font-size: 22px;
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.02em;
   color: var(--clova-green);
+}
+
+.app-header__brand::before {
+  content: "";
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  background: url("/assets/ullimtoon-logo-mark.png") 50% 37% / 100px 100px no-repeat;
+}
+
+@media (max-width: 620px) {
+  .app-header {
+    padding-inline: var(--space-400);
+  }
+
+  .app-header__brand {
+    gap: var(--space-100);
+    font-size: 18px;
+  }
+
+  .app-header__brand::before {
+    flex-basis: 32px;
+    width: 32px;
+    height: 32px;
+    background-size: 82px 82px;
+  }
 }
 
 .badge {

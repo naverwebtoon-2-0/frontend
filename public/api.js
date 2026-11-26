@@ -218,8 +218,23 @@ export async function getMe() {
 async function currentSeries(seriesId) {
   if (seriesId) return request(`/v1/series/${enc(seriesId)}`);
   const { items } = await request('/v1/series');
-  if (!items.length) throw new ApiError('등록된 작품이 없습니다.', 404, 'NOT_FOUND');
+  if (!items.length) throw new ApiError('등록된 작품이 없습니다.', 404, 'NO_SERIES');
   return items[0];
+}
+
+/** 신규 작가의 첫 작품 생성. POST /v1/series */
+export async function createSeries({ title, description = '', genre, language = 'ko', serialStatus = 'ongoing' }) {
+  return request('/v1/series', {
+    method: 'POST',
+    body: {
+      title,
+      description,
+      language,
+      genre,
+      serial_status: serialStatus,
+    },
+    idempotent: true,
+  });
 }
 
 const EPISODE_STATUS = {

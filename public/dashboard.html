@@ -49,7 +49,59 @@
         <button class="button button--secondary" id="retry" type="button">다시 시도</button>
       </div>
 
-      <ul class="stats" aria-label="제작 지표">
+      <p class="dashboard-status" id="dashboard-status" role="status" hidden></p>
+
+      <section class="card first-series" id="first-series" aria-labelledby="first-series-title" hidden>
+        <div class="first-series__intro">
+          <span class="first-series__eyebrow">작가 활동 시작하기</span>
+          <h2 class="subtitle" id="first-series-title">첫 작품을 만들어보세요</h2>
+          <p>작품의 기본 정보를 등록하면 첫 회차를 업로드하고 AI 음성 제작을 시작할 수 있어요.</p>
+        </div>
+
+        <form class="first-series__form" id="first-series-form">
+          <div class="first-series__field">
+            <label for="series-title">작품명 <span aria-hidden="true">*</span></label>
+            <input class="first-series__control" id="series-title" name="title" type="text"
+                   maxlength="200" autocomplete="off" required>
+          </div>
+
+          <div class="first-series__field">
+            <label for="series-genre">대표 장르 <span aria-hidden="true">*</span></label>
+            <select class="first-series__control" id="series-genre" name="genre" required>
+              <option value="">장르 선택</option>
+              <option value="romance">로맨스</option>
+              <option value="fantasy">판타지</option>
+              <option value="action">액션</option>
+              <option value="drama">드라마</option>
+              <option value="comedy">코미디</option>
+              <option value="thriller">스릴러</option>
+              <option value="daily">일상</option>
+              <option value="sports">스포츠</option>
+              <option value="historical">시대극</option>
+              <option value="etc">기타</option>
+            </select>
+          </div>
+
+          <div class="first-series__field first-series__field--wide">
+            <div class="first-series__label-row">
+              <label for="series-description">작품 소개 <span class="first-series__optional" aria-hidden="true">선택</span></label>
+              <span id="description-count">0 / 5,000자</span>
+            </div>
+            <textarea class="first-series__control first-series__textarea" id="series-description"
+                      name="description" maxlength="5000" rows="5"
+                      aria-describedby="description-count"
+                      placeholder="독자에게 작품의 매력을 소개해주세요."></textarea>
+          </div>
+
+          <div class="first-series__footer first-series__field--wide">
+            <p>한국어 · 연재 중으로 시작합니다.</p>
+            <button class="button button--primary" id="create-series" type="submit">첫 작품 만들기</button>
+          </div>
+          <p class="first-series__error first-series__field--wide" id="first-series-error" role="alert" tabindex="-1" hidden></p>
+        </form>
+      </section>
+
+      <ul class="stats" id="dashboard-stats" aria-label="제작 지표">
         <li class="card stat-card">
           <span>검수 필요</span>
           <strong class="stat-card__value" data-slot="review-count">–</strong>
@@ -67,7 +119,7 @@
         </li>
       </ul>
 
-      <section class="card panel" aria-labelledby="project-title">
+      <section class="card panel" id="dashboard-work" aria-labelledby="project-title">
         <div class="panel__header">
           <div class="panel__copy">
             <h2 class="subtitle" id="project-title" data-slot="work-title">&nbsp;</h2>
