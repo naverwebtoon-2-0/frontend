@@ -2,17 +2,13 @@ import { apiErrorMessage, getMe, isMockMode, loginAuthor } from './api.js';
 
 const form = document.querySelector('#login-form');
 const error = document.querySelector('#login-error');
-const mock = document.querySelector('#mock-login');
 const params = new URLSearchParams(location.search);
 const requestedNext = params.get('next');
 const next = requestedNext?.startsWith('/') && !requestedNext.startsWith('//') ? requestedNext : '/dashboard';
 
-document.querySelector('#mock-continue').href = next;
-
 async function init() {
   if (isMockMode()) {
-    form.hidden = true;
-    mock.hidden = false;
+    location.replace(next);
     return;
   }
   try {

@@ -53,7 +53,7 @@ export function setProgress(bar, percent) {
 export async function renderHeader() {
   try {
     const me = await getMe();
-    fillSlots(document, { 'author-name': `${me.name} 작가` });
+    fillSlots(document, { 'author-name': me.name });
   } catch {
     fillSlots(document, { 'author-name': '' });
   }
