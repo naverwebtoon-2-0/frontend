@@ -13,6 +13,21 @@
   padding: var(--space-800);
 }
 
+.login-brand {
+  align-self: center;
+  width: 160px;
+  height: 150px;
+  overflow: hidden;
+}
+
+.login-brand img {
+  display: block;
+  width: 340px;
+  max-width: none;
+  height: auto;
+  transform: translate(-92px, -67px);
+}
+
 .login-heading,
 .login-form,
 .login-form label {
