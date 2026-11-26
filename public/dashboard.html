@@ -126,7 +126,12 @@
             <h2 class="subtitle" id="project-title" data-slot="work-title">&nbsp;</h2>
             <p class="text-small" data-slot="work-meta">&nbsp;</p>
           </div>
-          <button class="button button--danger" id="delete-series" type="button">작품 삭제</button>
+          <details class="overflow-menu" id="series-actions">
+            <summary class="overflow-menu__trigger" aria-label="작품 더보기">⋯</summary>
+            <div class="overflow-menu__popup">
+              <button class="overflow-menu__danger" id="delete-series" type="button">작품 삭제</button>
+            </div>
+          </details>
         </div>
         <div class="progress" id="review-block">
           <div class="progress__copy">
@@ -160,7 +165,12 @@
         <span data-slot="status"></span>
         <span data-slot="duration"></span>
         <a data-slot="action"></a>
-        <button class="episode-row__delete" data-slot="delete" type="button">회차 삭제</button>
+        <details class="overflow-menu" data-slot="more-menu">
+          <summary class="overflow-menu__trigger" data-slot="more-trigger">⋯</summary>
+          <div class="overflow-menu__popup">
+            <button class="overflow-menu__danger" data-slot="delete" type="button">회차 삭제</button>
+          </div>
+        </details>
       </div>
     </li>
   </template>

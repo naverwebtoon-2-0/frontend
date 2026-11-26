@@ -93,9 +93,11 @@ function renderEpisodes(episodes) {
     row.dataset.status = episode.status;
     const action = row.querySelector('[data-slot="action"]');
     const deleteButton = row.querySelector('[data-slot="delete"]');
+    const moreTrigger = row.querySelector('[data-slot="more-trigger"]');
     deleteButton.dataset.episodeId = episode.id;
     deleteButton.dataset.episodeName = episodeLabel(episode.number, episode.title);
     deleteButton.setAttribute('aria-label', `${episodeLabel(episode.number, episode.title)} 삭제`);
+    moreTrigger.setAttribute('aria-label', `${episodeLabel(episode.number, episode.title)} 더보기`);
     const href = actionHref(episode);
     if (href) {
       action.href = href;
@@ -112,6 +114,7 @@ function renderEpisodes(episodes) {
 
 function render({ stats, currentWork, recentEpisodes }) {
   deleteSeriesButton.setAttribute('aria-label', `${currentWork.title} 작품 삭제`);
+  document.querySelector('#series-actions summary').setAttribute('aria-label', `${currentWork.title} 작품 더보기`);
   const { review } = currentWork;
   fillSlots(main, {
     'review-count': stats.reviewRequired.count,
@@ -169,6 +172,7 @@ async function load() {
 
 async function handleSeriesDelete() {
   if (!currentWork) return;
+  deleteSeriesButton.closest('details').removeAttribute('open');
   const confirmed = window.confirm(
     `‘${currentWork.title}’ 작품을 삭제할까요?\n삭제한 작품과 관련 데이터는 복구할 수 없습니다.`,
   );
@@ -194,6 +198,7 @@ async function handleSeriesDelete() {
 async function handleEpisodeDelete(button) {
   const { episodeId, episodeName } = button.dataset;
   if (!episodeId) return;
+  button.closest('details').removeAttribute('open');
   const confirmed = window.confirm(
     `‘${episodeName}’ 회차를 삭제할까요?\n삭제한 회차는 복구할 수 없습니다.`,
   );
@@ -257,6 +262,19 @@ deleteSeriesButton.addEventListener('click', handleSeriesDelete);
 document.querySelector('#recent-episodes').addEventListener('click', (event) => {
   const button = event.target.closest('[data-slot="delete"]');
   if (button) void handleEpisodeDelete(button);
+});
+document.addEventListener('click', (event) => {
+  const selectedMenu = event.target.closest('.overflow-menu');
+  document.querySelectorAll('.overflow-menu[open]').forEach((menu) => {
+    if (menu !== selectedMenu) menu.removeAttribute('open');
+  });
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const menu = document.querySelector('.overflow-menu[open]');
+  if (!menu) return;
+  menu.removeAttribute('open');
+  menu.querySelector('summary').focus();
 });
 firstSeriesForm.addEventListener('submit', handleFirstSeriesSubmit);
 seriesTitle.addEventListener('input', () => seriesTitle.setCustomValidity(''));
