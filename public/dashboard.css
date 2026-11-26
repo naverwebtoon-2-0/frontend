@@ -157,8 +157,18 @@
 }
 
 .dashboard .dashboard-status[hidden],
+.dashboard .dashboard-action-error[hidden],
 .dashboard .first-series__error[hidden] {
   display: none;
+}
+
+.dashboard .dashboard-action-error {
+  margin: 0;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid rgba(255, 138, 128, 0.35);
+  border-radius: var(--radius-200);
+  background: rgba(255, 138, 128, 0.08);
+  color: #ff8a80;
 }
 
 /* 패널 제목: 32px → 작품명 20px, 섹션 제목 18px */
@@ -187,6 +197,83 @@
   padding: var(--space-200) var(--space-300);
   border-color: var(--studio-border-default);
   font-size: var(--text-small);
+}
+
+.dashboard .overflow-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.dashboard .overflow-menu__trigger {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-100);
+  color: var(--studio-text-secondary);
+  font-size: 22px;
+  line-height: 1;
+  place-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dashboard .overflow-menu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.dashboard .overflow-menu__trigger:hover,
+.dashboard .overflow-menu[open] .overflow-menu__trigger {
+  border-color: var(--studio-border-default);
+  background: var(--studio-bg-hover);
+  color: var(--studio-text-primary);
+}
+
+.dashboard .overflow-menu__trigger:focus-visible {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}
+
+.dashboard .overflow-menu__popup {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.dashboard .overflow-menu__danger {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-100);
+  background: transparent;
+  color: #ff8a80;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard .overflow-menu__danger:hover,
+.dashboard .overflow-menu__danger:focus-visible {
+  background: rgba(255, 138, 128, 0.1);
+}
+
+.dashboard .overflow-menu__danger:focus-visible {
+  outline: 2px solid #ff8a80;
+  outline-offset: -2px;
+}
+
+.dashboard .overflow-menu__danger:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .dashboard .panel__header .link {

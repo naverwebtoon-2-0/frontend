@@ -1,0 +1,122 @@
+.series-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-300);
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 var(--space-600);
+  border: 0;
+  border-bottom: 1px solid var(--studio-border-default);
+}
+
+.series-picker legend {
+  padding: 0;
+  font-size: var(--text-medium);
+  font-weight: var(--weight-strong);
+}
+
+.series-picker__hint,
+.series-picker__status,
+.series-picker__description label span {
+  color: var(--studio-text-secondary);
+}
+
+.series-picker__status:empty {
+  display: none;
+}
+
+.series-picker__modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-200);
+}
+
+.series-picker__mode {
+  display: flex;
+  align-items: center;
+  gap: var(--space-200);
+  min-height: 44px;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+  cursor: pointer;
+}
+
+.series-picker__mode:has(input:checked) {
+  border-color: var(--clova-green);
+  background: rgba(5, 214, 134, 0.08);
+}
+
+.series-picker__mode:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.series-picker__mode input {
+  accent-color: var(--clova-green);
+}
+
+.series-picker__mode:focus-within {
+  outline: 2px solid var(--clova-green);
+  outline-offset: 2px;
+}
+
+.series-picker__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-200);
+}
+
+.series-picker .select-wrap {
+  align-self: stretch;
+  display: block;
+  min-height: 44px;
+  padding: var(--space-300) var(--space-400);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-surface);
+}
+
+.series-picker .select-wrap::after {
+  right: var(--space-400);
+}
+
+.series-picker .select {
+  width: 100%;
+  padding-right: var(--space-600);
+}
+
+.series-picker__panel[hidden] {
+  display: none;
+}
+
+.series-picker__new {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.6fr);
+  gap: var(--space-400);
+  padding: var(--space-400);
+  border-radius: var(--radius-200);
+  background: var(--studio-bg-elevated);
+}
+
+.series-picker__description {
+  grid-column: 1 / -1;
+}
+
+.series-picker textarea.input {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .series-picker__modes,
+  .series-picker__new {
+    grid-template-columns: 1fr;
+  }
+
+  .series-picker__description {
+    grid-column: auto;
+  }
+}
