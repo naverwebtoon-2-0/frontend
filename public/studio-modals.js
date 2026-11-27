@@ -8,6 +8,7 @@ import {
   createCharacter,
   createDialogueLine,
   regenerateLine,
+  regenerateLines,
   regenerateStale,
   updateCharacterName,
   updateCharacterVoice,
@@ -15,7 +16,7 @@ import {
   updateLine,
   updateSfxCue,
 } from './api.js';
-import { fillSlots, formatDuration } from './common.js';
+import { fillSlots } from './common.js';
 
 const SECONDS_PER_ITEM = 5; // 일괄 재생성 예상 시간(항목당). 서버 추정치가 생기면 바꾼다.
 
@@ -194,8 +195,22 @@ export function setupModals(ctx) {
     const voiceId = form.elements.voice.value;
     const speed = Number(form.elements.speed.value);
     if (voiceId === voiceTarget.voiceId && speed === voiceTarget.speed) return '';
-    await updateCharacterVoice(voiceTarget.id, { voiceId, speed });
-    return `${voiceTarget.name} 음성을 바꿨습니다. 해당 대사를 다시 생성해야 합니다.`;
+    const lineIds = state.studio.scenes.flatMap((scene) => (
+      state.studio.sceneDetails[scene.id].items
+        .filter((item) => item.editable === 'line' && item.characterId === voiceTarget.id)
+        .map((item) => item.id)
+    ));
+    await updateCharacterVoice(voiceTarget.id, {
+      voiceId,
+      voiceParams: { ...voiceTarget.voiceParams, speed },
+    });
+    try {
+      await regenerateLines(episodeId, lineIds);
+    } catch (error) {
+      await reload();
+      throw new Error(`목소리는 저장했지만 음성 생성에 실패했습니다. ${error.message || ''}`.trim());
+    }
+    return `${voiceTarget.name} 목소리를 변경하고 대사 ${lineIds.length}개의 음성을 새로 만들었습니다.`;
   });
 
   /** 선택한 항목의 인물(대사는 화자, 그 밖에는 나레이터) 음성을 편집한다. */
@@ -212,7 +227,6 @@ export function setupModals(ctx) {
     fillSlots(voiceModal, {
       'voice-modal-sub': `${sceneName(state.scene.number)} · ${isNarrator ? '나레이션' : `${character.name} 대사`}`,
       'voice-modal-label': isNarrator ? '나레이터' : '화자',
-      'voice-preview': item?.durationMs ? `미리 듣기 (${formatDuration(item.durationMs / 1000)})` : '미리 듣기',
       'voice-current': '현재 음성',
     });
     const select = voiceModal.querySelector('[name="voice"]');
@@ -221,8 +235,10 @@ export function setupModals(ctx) {
     open(voiceModal, 'select');
   }
 
-  // 선택을 바꾸면 "현재 음성" 표시를 지운다.
-  voiceModal.addEventListener('change', () => fillSlots(voiceModal, { 'voice-current': '변경됨 · 적용 전' }));
+  // 선택을 바꾸면 저장 전 상태를 표시한다.
+  voiceModal.addEventListener('change', () => {
+    fillSlots(voiceModal, { 'voice-current': '변경됨 · 적용 전' });
+  });
 
   // ── 효과음 설정 ───────────────────────────────────────
 
@@ -247,11 +263,6 @@ export function setupModals(ctx) {
     volumeInput.value = item.sfx.volume;
     showVolume();
     open(sfxModal, focusVolume ? '[name="volume"]' : 'select');
-  }
-
-  // 미리 듣기: 샘플 음원(sample_url)이 아직 없다.
-  for (const button of document.querySelectorAll('[data-preview]')) {
-    button.addEventListener('click', () => toast('미리 듣기 음원이 아직 없습니다. 음원 URL이 오면 재생합니다.'));
   }
 
   // ── 일괄 재생성 ───────────────────────────────────────

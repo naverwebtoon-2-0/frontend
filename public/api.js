@@ -498,7 +498,15 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
       const track = l.kind === 'sfx_text' ? 'sfx' : l.kind;
       const speaker = characters.get(l.character_id);
       const label = l.kind === 'dialogue' ? `${speaker?.name ?? '화자 미지정'} · ${l.text}` : l.kind === 'narration' ? `원문 · ${truncate(l.text, 12)}` : l.text;
-      clips[track]?.push({ id: `clip_${l.id}`, itemId: l.id, label, start: cursor, duration });
+      clips[track]?.push({
+        id: `clip_${l.id}`,
+        itemId: l.id,
+        label,
+        start: cursor,
+        duration,
+        audioUrl: l.audio?.url ?? null,
+        volume: 1,
+      });
       cursor += duration + CLIP_GAP;
     }
     // 효과음 큐: 큐 위치(y_ratio) 이후 첫 대사와 함께 시작
@@ -512,6 +520,8 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         label: presetName.get(cue.sfx_tag) ?? cue.sfx_tag,
         start,
         duration: (cue.duration_ms ?? DEFAULT_SFX_SECONDS * 1000) / 1000,
+        audioUrl: cue.url ?? cue.audio_url ?? null,
+        volume: cue.volume ?? 1,
       });
     }
   }
@@ -539,6 +549,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         bbox: l.bbox,
         start: startOf.get(l.id) ?? null,
         audioStatus: l.audio?.status ?? 'none',
+        audioUrl: l.audio?.url ?? null,
         ttsStale: l.audio?.status === 'stale',
       });
       // 화면해설(이미지 설명)은 첫 나레이션 뒤에 둔다.
@@ -559,6 +570,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         sfx: { tag: cue.sfx_tag, preset: presetName.get(cue.sfx_tag) ?? cue.sfx_tag, volume: Math.round((cue.volume ?? 1) * 100) },
         bbox: { x: 0.02, y: cue.y_ratio, w: 0, h: 0 },
         start: startOf.get(cue.id) ?? null,
+        audioUrl: cue.url ?? cue.audio_url ?? null,
         ttsStale: false,
       });
     }
@@ -718,12 +730,12 @@ export async function updateImageDescription(episodeId, imageId, alt) {
 /**
  * 인물 목소리 변경. PATCH /v1/characters/{id}
  * 그 인물의 모든 대사가 stale이 된다(명세 §6.3).
- * @param {{ voiceId: string, speed: number }} input speed는 voice_params.speed (-1·0·1로 가정)
+ * @param {{ voiceId: string, voiceParams: object }} input
  */
-export async function updateCharacterVoice(characterId, { voiceId, speed }) {
+export async function updateCharacterVoice(characterId, { voiceId, voiceParams }) {
   return request(`/v1/characters/${enc(characterId)}`, {
     method: 'PATCH',
-    body: { voice_id: voiceId, voice_params: { speed } },
+    body: { voice_id: voiceId, voice_params: voiceParams },
   });
 }
 
@@ -746,6 +758,17 @@ export async function regenerateStale(episodeId, onProgress) {
     idempotent: true,
   });
   await waitForJob(job.id, onProgress);
+}
+
+/** 지정한 대사들의 음성만 다시 만든다. POST /v1/episodes/{id}/regenerate { scope: "lines" } */
+export async function regenerateLines(episodeId, lineIds, onProgress) {
+  if (!lineIds.length) return;
+  const result = await request(`/v1/episodes/${enc(episodeId)}/regenerate`, {
+    method: 'POST',
+    body: { scope: 'lines', line_ids: lineIds },
+    idempotent: true,
+  });
+  if (result.job) await waitForJob(result.job.id, onProgress);
 }
 
 // ── A5 게시 전 확인 ──────────────────────────────────

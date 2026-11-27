@@ -24,6 +24,7 @@ const state = {
   lastSaved: 0,
   autoNextTimer: null,
   audioTracks: new Map(),
+  audioPlayPending: new WeakSet(),
   audioErrorReported: false,
 };
 
@@ -84,21 +85,27 @@ function syncAudioTracks({ seeked = false } = {}) {
         audio.dataset.refreshed = 'true';
         audio.src = cue.audioRefreshUrl;
         audio.load();
-        if (state.playing) void audio.play();
+        audio.addEventListener('canplay', () => syncAudioTracks({ seeked: true }), { once: true });
       });
       state.audioTracks.set(cue.id, audio);
     }
     audio.volume = audioVolume(cue);
     audio.playbackRate = state.settings.playbackRate;
     const position = Math.max(0, state.time - cue.start);
-    if (seeked || Math.abs(audio.currentTime - position) > 0.7) {
+    if (audio.readyState >= 1 && !state.audioPlayPending.has(audio)
+      && (seeked || Math.abs(audio.currentTime - position) > 0.7)) {
       try { audio.currentTime = position; } catch { /* 메타데이터를 기다린다. */ }
     }
-    audio.play().catch(() => {
-      if (state.audioErrorReported) return;
-      state.audioErrorReported = true;
-      announce('음원을 자동으로 시작하지 못했습니다. 재생 버튼을 다시 누르세요.');
-    });
+    if (audio.paused && !state.audioPlayPending.has(audio)) {
+      state.audioPlayPending.add(audio);
+      audio.play().catch((error) => {
+        if (error?.name === 'AbortError' || state.audioErrorReported) return;
+        state.audioErrorReported = true;
+        setPlaying(false);
+        toast('음원을 재생하지 못했습니다. 잠시 후 다시 시도해주세요.');
+        announce('음원을 재생하지 못했습니다. 잠시 후 다시 시도해주세요.');
+      }).finally(() => state.audioPlayPending.delete(audio));
+    }
   }
 }
 

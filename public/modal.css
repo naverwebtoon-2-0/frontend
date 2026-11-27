@@ -111,7 +111,6 @@ fieldset.modal__field .modal__label {
 .modal__input:focus-visible,
 .modal__select:focus-visible,
 .modal__button:focus-visible,
-.modal__preview:focus-visible,
 .segmented input:focus-visible + span,
 .chip-tabs input:focus-visible + span {
   outline: 2px solid var(--clova-green);
@@ -140,16 +139,6 @@ fieldset.modal__field .modal__label {
   padding: 0 12px;
   border-radius: var(--radius-200);
   background: var(--studio-bg-elevated);
-}
-
-.modal__preview {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--studio-text-primary);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
 }
 
 .modal__hint {

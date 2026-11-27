@@ -58,6 +58,9 @@ const state = {
   window: 36,
   playing: false,
   stopAt: null, // 개별 항목 재생일 때 멈출 시각(초). null이면 끝까지 재생
+  audioTracks: new Map(),
+  audioPlayPending: new WeakSet(),
+  audioErrorReported: false,
   previewZoom: 75,
   timelineZoom: 100,
 };
@@ -409,6 +412,7 @@ async function selectScene(sceneId, { keepItem = false } = {}) {
 
 /** 서버 데이터를 다시 받아 전체를 다시 그린다. 수정 직후 상태(stale 등)를 서버 기준으로 맞춘다. */
 async function reloadStudio() {
+  resetAudioTracks();
   state.studio = await getStudio(episodeId);
   state.speakers = state.studio.speakers;
   renderHeader();
@@ -583,7 +587,66 @@ function updatePlayback() {
   $('#timeline-play').setAttribute('aria-label', state.playing ? '일시정지' : '재생');
 }
 
-// 음원 URL(audio.url)이 오면 <audio>로 바꾼다. 지금은 재생 위치만 움직인다.
+function resetAudioTracks() {
+  state.playing = false;
+  state.stopAt = null;
+  for (const audio of state.audioTracks.values()) {
+    audio.pause();
+    audio.dataset.disposed = 'true';
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  state.audioTracks.clear();
+  state.audioErrorReported = false;
+}
+
+function pauseAudioTracks() {
+  for (const audio of state.audioTracks.values()) audio.pause();
+}
+
+function syncAudioTracks({ seeked = false } = {}) {
+  const active = allClips().filter((clip) => clip.audioUrl
+    && state.time >= clip.start && state.time < clip.start + clip.duration);
+  const activeIds = new Set(active.map((clip) => clip.id));
+
+  for (const [clipId, audio] of state.audioTracks) {
+    if (!state.playing || !activeIds.has(clipId)) audio.pause();
+  }
+  if (!state.playing) return;
+
+  for (const clip of active) {
+    let audio = state.audioTracks.get(clip.id);
+    if (!audio) {
+      audio = new Audio(clip.audioUrl);
+      audio.preload = 'auto';
+      audio.addEventListener('error', () => {
+        if (audio.dataset.disposed || state.audioErrorReported) return;
+        state.audioErrorReported = true;
+        setPlaying(false);
+        toast('음원을 불러오지 못했습니다. 음원 URL 또는 스토리지 CORS 설정을 확인해주세요.');
+      });
+      state.audioTracks.set(clip.id, audio);
+    }
+    audio.volume = Math.max(0, Math.min(1, clip.volume ?? 1));
+    const position = Math.max(0, state.time - clip.start);
+    if (audio.readyState >= 1 && !state.audioPlayPending.has(audio)
+      && (seeked || Math.abs(audio.currentTime - position) > 0.7)) {
+      try { audio.currentTime = position; } catch { /* 메타데이터 로드를 기다린다. */ }
+    }
+    if (audio.paused && !state.audioPlayPending.has(audio)) {
+      state.audioPlayPending.add(audio);
+      audio.play().catch((error) => {
+        // 탐색·일시정지로 재생 요청이 취소되는 AbortError는 정상 흐름이다.
+        if (error?.name === 'AbortError') return;
+        if (audio.dataset.disposed || state.audioErrorReported) return;
+        state.audioErrorReported = true;
+        setPlaying(false);
+        toast('음원을 재생하지 못했습니다. 재생 버튼을 다시 눌러주세요.');
+      }).finally(() => state.audioPlayPending.delete(audio));
+    }
+  }
+}
+
 let lastFrame;
 function tick(now) {
   if (!state.playing) return;
@@ -593,13 +656,19 @@ function tick(now) {
   if (state.time >= end) {
     state.playing = false;
     state.stopAt = null;
+    pauseAudioTracks();
   }
   updatePlayback();
+  syncAudioTracks();
   if (state.playing) requestAnimationFrame(tick);
 }
 
 /** stopAt을 주면 그 시각(초)에서 멈춘다. 개별 항목 재생에 쓴다. */
 function setPlaying(playing, { stopAt = null } = {}) {
+  if (playing && !allClips().some((clip) => clip.audioUrl)) {
+    toast('재생할 음원이 없습니다. TTS 생성 상태와 audio URL을 확인해주세요.');
+    return;
+  }
   const wasPlaying = state.playing;
   state.playing = playing;
   state.stopAt = playing ? stopAt : null;
@@ -609,11 +678,13 @@ function setPlaying(playing, { stopAt = null } = {}) {
     // 이미 재생 중이면 기존 루프가 이어 돈다. 루프를 하나 더 돌리면 두 배속이 된다.
     if (!wasPlaying) requestAnimationFrame(tick);
   }
+  syncAudioTracks({ seeked: playing });
   updatePlayback();
 }
 
 function seek(seconds) {
   state.time = Math.max(0, Math.min(state.studio.timeline.durationSeconds, seconds));
+  syncAudioTracks({ seeked: true });
   updatePlayback();
 }
 
@@ -665,6 +736,10 @@ function bindEvents() {
       case 'play': {
         const clip = allClips().find((c) => c.itemId === item.id);
         if (!clip) break;
+        if (!clip.audioUrl) {
+          toast('이 항목의 음원이 아직 준비되지 않았습니다. TTS를 생성한 뒤 다시 시도해주세요.');
+          break;
+        }
         const end = clip.start + clip.duration;
         // 같은 항목을 재생 중이면 일시정지, 아니면 그 항목 구간만 재생한다.
         if (state.playing && state.stopAt === end) {
