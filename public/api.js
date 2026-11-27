@@ -471,13 +471,49 @@ function withDefaultCharacterNames(characters) {
   });
 }
 
+/** 인물명 비교 키. 앞뒤·중복 공백과 대소문자 차이는 같은 이름으로 본다. */
+export function characterNameKey(name) {
+  return (name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
+}
+
+/**
+ * 이름이 같은 인물(나레이션 제외)을 하나로 묶는다.
+ * 대표 인물은 목소리가 지정된 첫 인물(없으면 첫 인물)이고, 묶인 인물 id는 memberIds에 모은다.
+ * 서버에 남아 있는 같은 이름의 인물도 화면에서는 한 명으로 보이게 한다.
+ */
+function mergeSameNameCharacters(characters) {
+  const groups = new Map();
+  for (const character of characters) {
+    const key = character.kind === 'narration' ? `narration:${character.id}` : `name:${characterNameKey(character.name)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(character);
+  }
+  const canonical = new Map();
+  const merged = [];
+  for (const members of groups.values()) {
+    const lead = members.find((c) => c.voice_id) ?? members[0];
+    for (const member of members) canonical.set(member.id, lead.id);
+    merged.push({ ...lead, member_ids: members.map((c) => c.id) });
+  }
+  return { characters: merged, canonicalId: (id) => (id == null ? id : canonical.get(id) ?? id) };
+}
+
 /**
  * GET /v1/episodes/{id}/studio 응답을 스튜디오 화면 형태로 바꾼다.
  * - 장면 = 원고 이미지 한 장
  * - 항목 = 대사(lines) + 효과음 큐(sfx_cues) + 이미지 설명(alt, 화면해설)
  * - 타임라인 = 이미지 순서·대사 순서대로 음성 길이를 이어 붙인 시간축
  */
-function adaptStudio({ studio, episode, series, voices, presets }) {
+function adaptStudio({ studio: raw, episode, series, voices, presets }) {
+  const { characters: mergedCharacters, canonicalId } = mergeSameNameCharacters(raw.characters);
+  const mergedLines = raw.lines.map((l) => ({ ...l, raw_character_id: l.character_id, character_id: canonicalId(l.character_id) }));
+  const usedIds = new Set(mergedLines.map((l) => l.character_id));
+  const studio = {
+    ...raw,
+    // 다른 인물로 합쳐져 대사가 하나도 남지 않은 이름 없는 인물은 목록에서 뺀다.
+    characters: mergedCharacters.filter((c) => c.kind === 'narration' || !c.auto_named || usedIds.has(c.id)),
+    lines: mergedLines,
+  };
   const characters = new Map(studio.characters.map((c) => [c.id, c]));
   const presetName = new Map(presets.map((p) => [p.tag, p.name]));
   const voiceName = new Map(voices.map((v) => [v.id, v.name]));
@@ -543,6 +579,8 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         order: l.order,
         source: l.kind === 'sfx_text' ? 'drawn' : 'manuscript',
         speakerId: l.character_id,
+        // 서버에 실제로 연결된 인물 id. 같은 이름 인물을 합칠 때 쓴다.
+        rawCharacterId: l.raw_character_id,
         characterId: l.character_id ?? (l.kind === 'narration' ? narrator?.id : null),
         // 제안 필드: OCR 원문. 명세에 없어 없으면 null
         originalText: l.original_text ?? null,
@@ -622,6 +660,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
     speakers: studio.characters.filter((c) => c.kind !== 'narration').map((c) => ({ id: c.id, name: c.name })),
     characters: studio.characters.map((c) => ({
       id: c.id,
+      memberIds: c.member_ids ?? [c.id],
       name: c.name,
       autoNamed: Boolean(c.auto_named),
       kind: c.kind ?? 'character',
@@ -675,6 +714,16 @@ export async function getScene(episodeId, sceneId) {
  */
 export async function updateLine(lineId, patch) {
   return request(`/v1/lines/${enc(lineId)}`, { method: 'PATCH', body: patch });
+}
+
+/** 여러 대사의 화자를 한 인물로 바꾼다. 같은 이름 인물을 합칠 때 쓴다. */
+export async function reassignLines(lineIds, characterId) {
+  await Promise.all(lineIds.map((lineId) => updateLine(lineId, { character_id: characterId })));
+}
+
+/** 묶인 인물(memberIds) 모두에 같은 이름을 적용한다. */
+export async function renameCharacterGroup(character, name) {
+  await Promise.all((character.memberIds ?? [character.id]).map((id) => updateCharacterName(id, name)));
 }
 
 /** 현재 장면에 말풍선 대사를 추가한다. POST /v1/episodes/{id}/lines */

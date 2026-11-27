@@ -4,8 +4,10 @@ import {
   completeSceneReview,
   createCharacter,
   getScene,
+  characterNameKey,
   getStudio,
-  updateCharacterName,
+  reassignLines,
+  renameCharacterGroup,
   updateLine,
 } from './api.js';
 import { fillSlots, formatDuration, setProgress } from './common.js';
@@ -424,6 +426,7 @@ async function reloadStudio() {
   renderHeader();
   renderTimeline();
   await selectScene(state.sceneId, { keepItem: true });
+  preloadAudio();
 }
 
 async function changeLine(lineId, patch) {
@@ -448,27 +451,35 @@ async function changeSpeakerName(field, itemId) {
   field.setCustomValidity('');
   const item = currentItem(itemId);
   const currentSpeaker = state.studio.characters.find((character) => character.id === item?.speakerId);
-  if (currentSpeaker?.name.localeCompare(name, 'ko', { sensitivity: 'base' }) === 0) return;
+  if (currentSpeaker && characterNameKey(currentSpeaker.name) === characterNameKey(name)) return;
 
   field.dataset.saving = 'true';
   field.disabled = true;
   try {
-    if (currentSpeaker && isProvisionalSpeaker(currentSpeaker)) {
-      // 아직 이름을 확정하지 않은 동일 화자 ID의 대사에만 이름을 일괄 적용한다.
-      const affectedLines = state.studio.scenes.reduce((count, scene) => (
-        count + state.studio.sceneDetails[scene.id].items.filter((candidate) => (
-          candidate.type === 'dialogue' && candidate.speakerId === currentSpeaker.id
-        )).length
-      ), 0);
-      await updateCharacterName(currentSpeaker.id, name);
-      await reloadStudio();
-      toast(`같은 인물로 인식된 대사 ${affectedLines}개에 ‘${name}’ 이름을 적용했습니다.`);
-      return;
-    }
     const existing = state.studio.characters.find((character) => (
       character.kind !== 'narration'
-      && character.name.localeCompare(name, 'ko', { sensitivity: 'base' }) === 0
+      && character.id !== currentSpeaker?.id
+      && characterNameKey(character.name) === characterNameKey(name)
     ));
+    if (currentSpeaker && isProvisionalSpeaker(currentSpeaker)) {
+      // 아직 이름을 확정하지 않은 동일 화자 ID의 대사에만 이름을 일괄 적용한다.
+      const affectedLineIds = state.studio.scenes.flatMap((scene) => (
+        state.studio.sceneDetails[scene.id].items
+          .filter((candidate) => candidate.editable === 'line' && candidate.speakerId === currentSpeaker.id)
+          .map((candidate) => candidate.id)
+      ));
+      if (existing) {
+        // 이미 같은 이름의 인물이 있으면 새 인물을 만들지 않고 그 인물로 합친다.
+        await reassignLines(affectedLineIds, existing.id);
+        await reloadStudio();
+        toast(`대사 ${affectedLineIds.length}개를 기존 인물 ‘${existing.name}’에 합쳤습니다.`);
+        return;
+      }
+      await renameCharacterGroup(currentSpeaker, name);
+      await reloadStudio();
+      toast(`같은 인물로 인식된 대사 ${affectedLineIds.length}개에 ‘${name}’ 이름을 적용했습니다.`);
+      return;
+    }
     const character = existing ?? await createCharacter(state.studio.episode.seriesId, name, {
       voiceId: currentSpeaker?.voiceId,
       voiceParams: currentSpeaker?.voiceParams,
@@ -610,29 +621,64 @@ function pauseAudioTracks() {
   for (const audio of state.audioTracks.values()) audio.pause();
 }
 
-function syncAudioTracks({ seeked = false } = {}) {
-  const active = allClips().filter((clip) => clip.audioUrl
+/** 재생 위치 기준 이만큼(초) 앞까지 시작하는 음원은 미리 받아 둔다. */
+const PRELOAD_AHEAD_SECONDS = 15;
+
+function activeAudioClips() {
+  return allClips().filter((clip) => clip.audioUrl
     && state.time >= clip.start && state.time < clip.start + clip.duration);
+}
+
+function ensureAudio(clip) {
+  let audio = state.audioTracks.get(clip.id);
+  if (audio) return audio;
+  audio = new Audio(clip.audioUrl);
+  audio.preload = 'auto';
+  audio.addEventListener('error', () => {
+    if (audio.dataset.disposed || state.audioErrorReported) return;
+    state.audioErrorReported = true;
+    setPlaying(false);
+    toast('음원을 불러오지 못했습니다. 음원 URL 또는 스토리지 CORS 설정을 확인해주세요.');
+  });
+  state.audioTracks.set(clip.id, audio);
+  return audio;
+}
+
+/** 지금부터 곧 들릴 클립의 음원을 미리 만들어 재생 버튼을 누르기 전에 연결·버퍼링을 끝낸다. */
+function preloadAudio() {
+  if (!state.studio) return;
+  const until = state.time + PRELOAD_AHEAD_SECONDS;
+  for (const clip of allClips()) {
+    if (clip.audioUrl && clip.start < until && clip.start + clip.duration > state.time) ensureAudio(clip);
+  }
+}
+
+/** 음원이 아직 재생할 만큼 준비되지 않았으면 true. 에러가 난 음원은 기다리지 않는다. */
+function audioWaiting(audio) {
+  return !audio.error && !audio.ended
+    && (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA || state.audioPlayPending.has(audio));
+}
+
+/** 지금 들려야 할 음원 중 하나라도 버퍼링 중이면 재생 시계를 멈춰 둔다. */
+function waitingForAudio() {
+  return activeAudioClips().some((clip) => {
+    const audio = state.audioTracks.get(clip.id);
+    return audio && audioWaiting(audio);
+  });
+}
+
+function syncAudioTracks({ seeked = false } = {}) {
+  const active = activeAudioClips();
   const activeIds = new Set(active.map((clip) => clip.id));
 
   for (const [clipId, audio] of state.audioTracks) {
     if (!state.playing || !activeIds.has(clipId)) audio.pause();
   }
+  preloadAudio();
   if (!state.playing) return;
 
   for (const clip of active) {
-    let audio = state.audioTracks.get(clip.id);
-    if (!audio) {
-      audio = new Audio(clip.audioUrl);
-      audio.preload = 'auto';
-      audio.addEventListener('error', () => {
-        if (audio.dataset.disposed || state.audioErrorReported) return;
-        state.audioErrorReported = true;
-        setPlaying(false);
-        toast('음원을 불러오지 못했습니다. 음원 URL 또는 스토리지 CORS 설정을 확인해주세요.');
-      });
-      state.audioTracks.set(clip.id, audio);
-    }
+    const audio = ensureAudio(clip);
     audio.volume = Math.max(0, Math.min(1, clip.volume ?? 1));
     const position = Math.max(0, state.time - clip.start);
     if (audio.readyState >= 1 && !state.audioPlayPending.has(audio)
@@ -667,6 +713,13 @@ function unfinishedSpeechClip(nextTime) {
 
 function tick(now) {
   if (!state.playing) return;
+  if (waitingForAudio()) {
+    // 음원이 준비될 때까지 시계를 세워 둬야 재생바와 소리가 어긋나지 않는다.
+    lastFrame = now;
+    syncAudioTracks();
+    requestAnimationFrame(tick);
+    return;
+  }
   const end = state.stopAt ?? state.studio.timeline.durationSeconds;
   const nextTime = Math.min(end, state.time + (now - lastFrame) / 1000);
   const unfinished = unfinishedSpeechClip(nextTime);
@@ -909,6 +962,7 @@ async function init() {
     return;
   }
   await selectScene(scenes.some((s) => s.id === requested) ? requested : first.id);
+  preloadAudio();
   $('#workspace').setAttribute('aria-busy', 'false');
 }
 

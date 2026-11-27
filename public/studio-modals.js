@@ -5,12 +5,14 @@
 // - 일괄 재생성 확인(stale 대사)
 // - ⋯ 메뉴(음성 설정 · 원문으로 되돌리기). TTS 재생성은 수정된 대사 카드의 버튼으로만 한다.
 import {
+  characterNameKey,
   createCharacter,
   createDialogueLine,
   regenerateLine,
   regenerateLines,
   regenerateStale,
-  updateCharacterName,
+  reassignLines,
+  renameCharacterGroup,
   updateCharacterVoice,
   updateImageDescription,
   updateLine,
@@ -77,7 +79,7 @@ export function setupModals(ctx) {
     if (!characterName) throw new Error('화자 이름을 입력해주세요.');
     if (!text) throw new Error('말풍선 텍스트를 입력해주세요.');
     const speakers = state.studio.characters.filter((character) => character.kind !== 'narration');
-    const existing = speakers.find((speaker) => speaker.name.localeCompare(characterName, 'ko', { sensitivity: 'base' }) === 0);
+    const existing = speakers.find((speaker) => characterNameKey(speaker.name) === characterNameKey(characterName));
     const character = existing ?? await createCharacter(state.studio.episode.seriesId, characterName);
     await createDialogueLine(episodeId, {
       imageId: state.sceneId,
@@ -109,18 +111,43 @@ export function setupModals(ctx) {
     const inputs = [...speakerNameList.querySelectorAll('input[data-character-id]')];
     const names = inputs.map((input) => input.value.trim());
     if (names.some((name) => !name)) throw new Error('모든 인물의 이름을 입력해주세요.');
-    if (new Set(names).size !== names.length) throw new Error('인물 이름은 서로 다르게 입력해주세요.');
 
-    const updates = inputs
-      .map((input) => ({
-        id: input.dataset.characterId,
-        name: input.value.trim(),
-        previousName: input.dataset.previousName,
-      }))
-      .filter((character) => character.name !== character.previousName);
-    if (!updates.length) return '';
-    await Promise.all(updates.map((character) => updateCharacterName(character.id, character.name)));
-    return `${updates.length}명의 인물 이름을 저장했습니다.`;
+    // 같은 이름을 입력한 인물끼리 묶는다. 이름을 그대로 둔 인물이 있으면 그 인물이 대표가 된다.
+    const groups = new Map();
+    for (const input of inputs) {
+      const character = state.studio.characters.find((c) => c.id === input.dataset.characterId);
+      if (!character) continue;
+      const entry = { character, name: input.value.trim(), renamed: input.value.trim() !== input.dataset.previousName };
+      const key = characterNameKey(entry.name);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    }
+
+    let renamed = 0;
+    let mergedLines = 0;
+    const tasks = [];
+    for (const entries of groups.values()) {
+      const lead = entries.find((entry) => !entry.renamed) ?? entries[0];
+      if (lead.renamed) {
+        renamed += 1;
+        tasks.push(renameCharacterGroup(lead.character, lead.name));
+      }
+      for (const entry of entries.filter((candidate) => candidate !== lead)) {
+        const lineIds = state.studio.scenes.flatMap((scene) => (
+          state.studio.sceneDetails[scene.id].items
+            .filter((item) => item.editable === 'line' && item.speakerId === entry.character.id)
+            .map((item) => item.id)
+        ));
+        mergedLines += lineIds.length;
+        tasks.push(reassignLines(lineIds, lead.character.id));
+      }
+    }
+    if (!tasks.length) return '';
+    await Promise.all(tasks);
+    const messages = [];
+    if (renamed) messages.push(`${renamed}명의 인물 이름을 저장했습니다.`);
+    if (mergedLines) messages.push(`같은 이름의 인물을 합치고 대사 ${mergedLines}개의 화자를 옮겼습니다.`);
+    return messages.join(' ');
   });
 
   function openSpeakerNames() {
@@ -200,10 +227,11 @@ export function setupModals(ctx) {
         .filter((item) => item.editable === 'line' && item.characterId === voiceTarget.id)
         .map((item) => item.id)
     ));
-    await updateCharacterVoice(voiceTarget.id, {
+    // 같은 이름으로 묶인 인물 모두에 같은 목소리를 적용한다.
+    await Promise.all((voiceTarget.memberIds ?? [voiceTarget.id]).map((id) => updateCharacterVoice(id, {
       voiceId,
       voiceParams: { ...voiceTarget.voiceParams, speed },
-    });
+    })));
     try {
       await regenerateLines(episodeId, lineIds);
     } catch (error) {

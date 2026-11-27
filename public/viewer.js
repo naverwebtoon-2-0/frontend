@@ -63,32 +63,75 @@ function pauseAudioTracks() {
   for (const audio of state.audioTracks.values()) audio.pause();
 }
 
+/** 재생 위치 기준 이만큼(초) 앞까지 시작하는 음원은 미리 받아 둔다. */
+const PRELOAD_AHEAD_SECONDS = 15;
+
+function activeAudioCues() {
+  return state.episode.cues.filter((cue) => cue.audioUrl
+    && state.time >= cue.start && state.time < cue.start + cue.duration);
+}
+
+function ensureAudio(cue) {
+  let audio = state.audioTracks.get(cue.id);
+  if (audio) return audio;
+  const expired = state.episode.audioUrlsExpireAt && Date.now() >= new Date(state.episode.audioUrlsExpireAt).getTime();
+  audio = new Audio(expired ? cue.audioRefreshUrl : cue.audioUrl);
+  audio.preload = 'auto';
+  audio.addEventListener('error', () => {
+    if (audio.dataset.refreshed || !cue.audioRefreshUrl) {
+      // 재시도까지 실패했다. 시계가 이 음원을 기다리지 않도록 표시만 남긴다.
+      audio.dataset.failed = 'true';
+      return;
+    }
+    audio.dataset.refreshed = 'true';
+    audio.src = cue.audioRefreshUrl;
+    audio.load();
+    audio.addEventListener('canplay', () => syncAudioTracks({ seeked: true }), { once: true });
+  });
+  state.audioTracks.set(cue.id, audio);
+  return audio;
+}
+
+/** 지금부터 곧 들릴 큐의 음원을 미리 만들어 재생 버튼을 누르기 전에 연결·버퍼링을 끝낸다. */
+function preloadAudio() {
+  if (!state.episode) return;
+  const until = state.time + PRELOAD_AHEAD_SECONDS;
+  for (const cue of state.episode.cues) {
+    if (cue.audioUrl && cue.start < until && cue.start + cue.duration > state.time) ensureAudio(cue);
+  }
+}
+
+/**
+ * 음원이 아직 재생할 만큼 준비되지 않았으면 true.
+ * 재시도할 주소가 남아 있으면 에러 중에도 기다리고, 끝내 실패하면 기다리지 않는다.
+ */
+function audioWaiting(audio) {
+  if (audio.ended || audio.dataset.failed) return false;
+  if (audio.error && audio.dataset.refreshed !== 'true') return false;
+  return audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA || state.audioPlayPending.has(audio);
+}
+
+/** 지금 들려야 할 음원 중 하나라도 버퍼링 중이면 재생 시계를 멈춰 둔다. */
+function waitingForAudio() {
+  return activeAudioCues().some((cue) => {
+    const audio = state.audioTracks.get(cue.id);
+    return audio && audioWaiting(audio);
+  });
+}
+
 function syncAudioTracks({ seeked = false } = {}) {
   if (!state.episode) return;
-  const active = state.episode.cues.filter((cue) => cue.audioUrl
-    && state.time >= cue.start && state.time < cue.start + cue.duration);
+  const active = activeAudioCues();
   const activeIds = new Set(active.map((cue) => cue.id));
 
   for (const [cueId, audio] of state.audioTracks) {
     if (!state.playing || !activeIds.has(cueId)) audio.pause();
   }
+  preloadAudio();
   if (!state.playing) return;
 
   for (const cue of active) {
-    let audio = state.audioTracks.get(cue.id);
-    if (!audio) {
-      const expired = state.episode.audioUrlsExpireAt && Date.now() >= new Date(state.episode.audioUrlsExpireAt).getTime();
-      audio = new Audio(expired ? cue.audioRefreshUrl : cue.audioUrl);
-      audio.preload = 'auto';
-      audio.addEventListener('error', () => {
-        if (audio.dataset.refreshed || !cue.audioRefreshUrl) return;
-        audio.dataset.refreshed = 'true';
-        audio.src = cue.audioRefreshUrl;
-        audio.load();
-        audio.addEventListener('canplay', () => syncAudioTracks({ seeked: true }), { once: true });
-      });
-      state.audioTracks.set(cue.id, audio);
-    }
+    const audio = ensureAudio(cue);
     audio.volume = audioVolume(cue);
     audio.playbackRate = state.settings.playbackRate;
     const position = Math.max(0, state.time - cue.start);
@@ -228,6 +271,13 @@ function unfinishedSpeechCue(nextTime) {
 
 function tick(now) {
   if (!state.playing) return;
+  if (waitingForAudio()) {
+    // 음원이 준비될 때까지 시계를 세워 둬야 재생바와 소리가 어긋나지 않는다.
+    lastFrame = now;
+    syncAudioTracks();
+    requestAnimationFrame(tick);
+    return;
+  }
   const { durationSeconds } = state.episode;
   const nextTime = Math.min(durationSeconds, state.time + ((now - lastFrame) / 1000) * state.settings.playbackRate);
   const unfinished = unfinishedSpeechCue(nextTime);
@@ -353,6 +403,7 @@ async function load({ keepTime = false } = {}) {
   }
   state.sceneIndex = sceneIndexAt(state.time);
   render(true);
+  preloadAudio();
 }
 
 // ── 이벤트 ───────────────────────────────────────────
