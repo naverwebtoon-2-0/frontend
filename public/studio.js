@@ -5,6 +5,7 @@ import {
   createCharacter,
   getScene,
   characterNameKey,
+  deleteLeftoverCharacter,
   getStudio,
   reassignLines,
   renameCharacterGroup,
@@ -25,11 +26,10 @@ const SCENE_STATUS = {
 };
 const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음', ignore: '읽지 않음' };
 const SOURCE_LABEL = { manuscript: '원고 텍스트', drawn: '그려진 글자', alt: '이미지 설명', preset: '효과음 프리셋' };
-const LINE_KIND_LABEL = { narration: '원문 나레이션', sfx_text: '효과음 글자', ignore: '읽지 않음' };
+const LINE_KIND_LABEL = { narration: '원문 나레이션', ignore: '읽지 않음' };
 const DIALOGUE_TYPE_OPTIONS = [
   ['dialogue', '대사'],
   ['narration', LINE_KIND_LABEL.narration],
-  ['sfx_text', LINE_KIND_LABEL.sfx_text],
   ['ignore', LINE_KIND_LABEL.ignore],
 ];
 // 어두운 스튜디오 화면에서 서로 충분히 구분되는 화자 색상.
@@ -220,22 +220,12 @@ function applyPreviewZoom() {
 
 // ── 장면 편집 ─────────────────────────────────────────
 
-/** 대사 종류·화자 선택지. 값은 명세의 kind와 character_id */
-function lineKindOptions() {
-  return [
-    ['narration', LINE_KIND_LABEL.narration],
-    ['dialogue:', '화자 미지정 · 대사'],
-    ...state.speakers.map((s) => [`dialogue:${s.id}`, `${s.name} · 대사`]),
-    ['sfx_text', LINE_KIND_LABEL.sfx_text],
-    ['ignore', LINE_KIND_LABEL.ignore],
-  ];
-}
-
 function itemActions(item) {
   if (item.editable === 'cue') {
     return [
       button('프리셋 변경', 'button', { 'data-action': 'edit-sfx', 'aria-haspopup': 'dialog' }),
       button('볼륨 조절', 'button', { 'data-action': 'edit-volume', 'aria-haspopup': 'dialog' }),
+      button('삭제', 'button', { 'data-action': 'delete-sfx' }),
     ];
   }
   if (item.editable === 'alt') {
@@ -243,10 +233,16 @@ function itemActions(item) {
   }
   const actions = [button('텍스트 수정', 'button', { 'data-action': 'edit-text', 'aria-haspopup': 'dialog' })];
   if (item.ttsStale) {
-    const stale = button('', 'stale-button', { 'data-action': 'regenerate' });
+    // 목소리가 없는 인물은 기본 음성으로 만들지 않고 목소리부터 고르게 한다.
+    const character = state.studio.characters.find((c) => c.id === item.characterId);
+    const needsVoice = Boolean(character) && !character.voiceId;
+    const hasAudio = item.durationMs != null || Boolean(item.audioUrl);
+    const stale = button('', 'stale-button', needsVoice
+      ? { 'data-action': 'select-voice', 'aria-haspopup': 'dialog' }
+      : { 'data-action': 'regenerate' });
     const dot = document.createElement('img');
     Object.assign(dot, { src: '/icons/dot-stale.svg', width: 6, height: 6, alt: '' });
-    stale.append(dot, 'TTS 재생성');
+    stale.append(dot, needsVoice || !hasAudio ? '음성 생성' : 'TTS 재생성');
     actions.push(stale);
   }
   actions.push(button('⋯', 'more-button', {
@@ -282,9 +278,10 @@ function renderItem(item) {
 
   const kind = li.querySelector('[data-field="kind"]');
   if (item.editable === 'line') {
+    // 드롭다운에서는 종류만 고른다. 화자는 대사로 바꾼 뒤 옆의 이름 입력칸에서 지정한다.
+    for (const [value, label] of DIALOGUE_TYPE_OPTIONS) kind.append(new Option(label, value));
+    kind.value = item.kind;
     if (item.kind === 'dialogue') {
-      for (const [value, label] of DIALOGUE_TYPE_OPTIONS) kind.append(new Option(label, value));
-      kind.value = 'dialogue';
       const speaker = state.speakers.find((candidate) => candidate.id === item.speakerId);
       const input = document.createElement('input');
       input.className = 'speaker-name-input';
@@ -297,9 +294,6 @@ function renderItem(item) {
       input.setAttribute('list', 'studio-speaker-options');
       input.setAttribute('aria-label', '화자 이름');
       kind.closest('.pill-select').insertAdjacentElement('afterend', input);
-    } else {
-      for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
-      kind.value = item.kind;
     }
   } else {
     kind.append(new Option(TYPE_LABEL[item.type], item.type));
@@ -431,7 +425,11 @@ async function reloadStudio() {
 
 async function changeLine(lineId, patch) {
   try {
+    const previous = state.studio.characters.find((c) => c.id === currentItem(lineId)?.speakerId);
     await updateLine(lineId, patch);
+    if ('character_id' in patch && patch.character_id !== previous?.id) {
+      await deleteLeftoverCharacter(state.studio, previous, [lineId]);
+    }
     await reloadStudio();
     toast('저장했습니다. 음성을 다시 만들어야 합니다.');
   } catch (err) {
@@ -471,6 +469,7 @@ async function changeSpeakerName(field, itemId) {
       if (existing) {
         // 이미 같은 이름의 인물이 있으면 새 인물을 만들지 않고 그 인물로 합친다.
         await reassignLines(affectedLineIds, existing.id);
+        await deleteLeftoverCharacter(state.studio, currentSpeaker, affectedLineIds);
         await reloadStudio();
         toast(`대사 ${affectedLineIds.length}개를 기존 인물 ‘${existing.name}’에 합쳤습니다.`);
         return;
@@ -480,13 +479,12 @@ async function changeSpeakerName(field, itemId) {
       toast(`같은 인물로 인식된 대사 ${affectedLineIds.length}개에 ‘${name}’ 이름을 적용했습니다.`);
       return;
     }
-    const character = existing ?? await createCharacter(state.studio.episode.seriesId, name, {
-      voiceId: currentSpeaker?.voiceId,
-      voiceParams: currentSpeaker?.voiceParams,
-    });
+    // 새 인물에게는 이전 화자의 목소리를 복사하지 않는다. 같은 목소리면 화자가 구분되지 않는다.
+    const character = existing ?? await createCharacter(state.studio.episode.seriesId, name);
     await updateLine(itemId, { kind: 'dialogue', character_id: character.id });
+    await deleteLeftoverCharacter(state.studio, currentSpeaker, [itemId]);
     await reloadStudio();
-    toast(`이 대사의 인물명만 ‘${name}’ 이름으로 변경했습니다.`);
+    toast(`이 대사의 인물명만 ‘${name}’ 이름으로 변경했습니다.${existing ? '' : ' 목소리를 골라 음성을 생성해주세요.'}`);
   } catch (error) {
     toast(error.message || '화자를 저장하지 못했습니다.');
     renderInspector();
@@ -825,7 +823,9 @@ function bindEvents() {
       case 'edit-text': modals.openText(item); break;
       case 'edit-sfx': modals.openSfx(item); break;
       case 'edit-volume': modals.openSfx(item, { focusVolume: true }); break;
+      case 'delete-sfx': void modals.removeSfx(item, trigger); break;
       case 'regenerate': void modals.regenerate(item, trigger); break;
+      case 'select-voice': modals.openVoice(item); break;
       case 'menu': modals.openMenu(item, trigger); break;
       default: break;
     }
@@ -833,6 +833,7 @@ function bindEvents() {
 
   $('#batch-regenerate').addEventListener('click', () => modals.openBatch());
   $('#add-dialogue').addEventListener('click', () => modals.openDialogue());
+  $('#add-sfx').addEventListener('click', () => modals.openAddSfx());
   $('#manage-speakers').addEventListener('click', () => modals.openSpeakerNames());
 
   $('#item-list').addEventListener('change', (event) => {
@@ -843,9 +844,8 @@ function bindEvents() {
       void changeSpeakerName(field, item.dataset.itemId);
       return;
     }
-    const [kind, characterId] = field.value.split(':');
-    // 대사가 아닌 종류로 바꾸면 화자를 비운다.
-    void changeLine(item.dataset.itemId, { kind, character_id: characterId || null });
+    // 종류를 바꾸면 화자를 비운다.
+    void changeLine(item.dataset.itemId, { kind: field.value, character_id: null });
   });
 
   $('#item-list').addEventListener('keydown', (event) => {

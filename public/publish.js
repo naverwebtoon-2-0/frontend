@@ -17,6 +17,9 @@ const state = {
   time: 0,
   playing: false,
   speed: 1,
+  audioTracks: new Map(),
+  audioPlayPending: new WeakSet(),
+  audioErrorReported: false,
 };
 
 // ── 공통 ─────────────────────────────────────────────
@@ -352,24 +355,118 @@ function renderPreview() {
   $('#preview-play').setAttribute('aria-label', state.playing ? '일시정지' : '재생');
 }
 
-// 음원 URL(audio_url)이 오면 <audio>로 바꾼다. 지금은 재생 위치만 움직인다.
+// ── 미리보기 음원 ─────────────────────────────────────
+
+function reportAudioError(message) {
+  if (state.audioErrorReported) return;
+  state.audioErrorReported = true;
+  toast(message);
+}
+
+function resetAudioTracks() {
+  for (const audio of state.audioTracks.values()) {
+    audio.dataset.disposed = 'true';
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  state.audioTracks.clear();
+  state.audioErrorReported = false;
+}
+
+function activeAudioCues() {
+  return state.preview.cues.filter((cue) => cue.audioUrl
+    && state.time >= cue.start && state.time < cue.start + cue.duration);
+}
+
+function ensureAudio(cue) {
+  let audio = state.audioTracks.get(cue.id);
+  if (audio) return audio;
+  audio = new Audio(cue.audioUrl);
+  audio.preload = 'auto';
+  audio.addEventListener('error', () => {
+    if (audio.dataset.disposed) return;
+    reportAudioError('일부 음원을 불러오지 못했습니다. 새로고침한 뒤 다시 들어 주세요.');
+  });
+  state.audioTracks.set(cue.id, audio);
+  return audio;
+}
+
+/** 지금 들려야 할 음원이 버퍼링 중이면 true. 그동안 재생 시계를 멈춰 자막과 소리를 맞춘다. */
+function waitingForAudio() {
+  return activeAudioCues().some((cue) => {
+    const audio = state.audioTracks.get(cue.id);
+    return audio && !audio.error && !audio.ended
+      && (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA || state.audioPlayPending.has(audio));
+  });
+}
+
+function syncAudioTracks({ seeked = false } = {}) {
+  const active = state.playing ? activeAudioCues() : [];
+  const activeIds = new Set(active.map((cue) => cue.id));
+  for (const [cueId, audio] of state.audioTracks) {
+    if (!activeIds.has(cueId)) audio.pause();
+  }
+
+  for (const cue of active) {
+    const audio = ensureAudio(cue);
+    audio.volume = Math.max(0, Math.min(1, cue.volume));
+    audio.playbackRate = state.speed;
+    const position = Math.max(0, state.time - cue.start);
+    if (audio.readyState >= 1 && !state.audioPlayPending.has(audio)
+      && (seeked || Math.abs(audio.currentTime - position) > 0.7)) {
+      try { audio.currentTime = position; } catch { /* 메타데이터 로드를 기다린다. */ }
+    }
+    if (!audio.error && audio.paused && !audio.ended && !state.audioPlayPending.has(audio)) {
+      state.audioPlayPending.add(audio);
+      audio.play().catch((error) => {
+        // 일시정지로 재생 요청이 취소되는 AbortError는 정상 흐름이다.
+        if (error?.name === 'AbortError' || audio.dataset.disposed) return;
+        reportAudioError('음원을 재생하지 못했습니다. 재생 버튼을 다시 눌러 주세요.');
+      }).finally(() => state.audioPlayPending.delete(audio));
+    }
+  }
+}
+
+/** 이번 프레임에 끝나는 대사의 음원이 아직 재생 중이면, 끝까지 들리도록 그 큐를 돌려준다. */
+function unfinishedSpeechCue(nextTime) {
+  return state.preview.cues.find((cue) => {
+    if (cue.kind === 'sfx' || state.time < cue.start || state.time >= cue.start + cue.duration) return false;
+    if (nextTime < cue.start + cue.duration) return false;
+    const audio = state.audioTracks.get(cue.id);
+    return Boolean(audio) && !audio.error && !audio.ended;
+  });
+}
+
 let lastFrame;
+let frameId;
 function tick(now) {
   if (!state.playing) return;
-  state.time = Math.min(state.preview.durationSeconds, state.time + ((now - lastFrame) / 1000) * state.speed);
+  if (!waitingForAudio()) {
+    const elapsed = Math.max(0, (now - lastFrame) / 1000);
+    const nextTime = Math.min(state.preview.durationSeconds, state.time + elapsed * state.speed);
+    const unfinished = unfinishedSpeechCue(nextTime);
+    state.time = unfinished ? unfinished.start + unfinished.duration - 0.001 : nextTime;
+    if (state.time >= state.preview.durationSeconds) state.playing = false;
+    renderPreview();
+  }
   lastFrame = now;
-  if (state.time >= state.preview.durationSeconds) state.playing = false;
-  renderPreview();
-  if (state.playing) requestAnimationFrame(tick);
+  syncAudioTracks();
+  if (state.playing) frameId = requestAnimationFrame(tick);
 }
 
 function setPlaying(playing) {
-  state.playing = playing;
-  if (playing) {
+  cancelAnimationFrame(frameId);
+  state.playing = playing && Boolean(state.preview);
+  if (state.playing) {
     if (state.time >= state.preview.durationSeconds) state.time = 0;
+    if (!state.preview.cues.some((cue) => cue.audioUrl)) toast('재생할 음원이 없어 자막만 진행합니다.');
+    state.audioErrorReported = false;
     lastFrame = performance.now();
-    requestAnimationFrame(tick);
+    frameId = requestAnimationFrame(tick);
   }
+  // 브라우저의 자동 재생 제한을 피하려고 클릭 처리 안에서 바로 재생을 시작한다.
+  syncAudioTracks({ seeked: true });
   renderPreview();
 }
 
@@ -383,6 +480,7 @@ $('#preview-all').addEventListener('click', () => {
 $('#preview-speed').addEventListener('click', (event) => {
   state.speed = SPEEDS[(SPEEDS.indexOf(state.speed) + 1) % SPEEDS.length];
   event.currentTarget.textContent = `${state.speed === 1 ? '1.0' : state.speed}×`;
+  if (state.playing) syncAudioTracks();
 });
 
 $('#checklist').addEventListener('click', (event) => {
@@ -392,7 +490,10 @@ $('#checklist').addEventListener('click', (event) => {
 $('#open-warnings').addEventListener('click', () => {
   openWarnings(state.checks.some((c) => c.level === 'required') ? 'required' : 'warning');
 });
-$('#open-confirm').addEventListener('click', openConfirm);
+$('#open-confirm').addEventListener('click', () => {
+  setPlaying(false);
+  openConfirm();
+});
 
 for (const radio of document.querySelectorAll('[name="visibility"]')) {
   radio.addEventListener('change', () => {
@@ -420,7 +521,10 @@ async function load() {
   try {
     const [studio, preview] = await Promise.all([getStudio(episodeId), getPublishPreview(episodeId)]);
     state.studio = studio;
+    state.playing = false;
+    resetAudioTracks();
     state.preview = preview;
+    state.time = Math.min(state.time, preview.durationSeconds);
     state.checks = buildChecks(studio);
     fillSlots(document, {
       'heading-sub': `${studio.episode.workTitle} · ${episodeLabel(studio.episode.number, studio.episode.title)} · 독자가 듣게 될 최종 결과를 확인하세요.`,

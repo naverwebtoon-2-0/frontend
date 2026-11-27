@@ -59,6 +59,8 @@ const db = {
     { tag: 'rain_loop', name: '빗소리 · 반복', category: 'weather' },
     { tag: 'thunder_near', name: '천둥(가까이)', category: 'weather' },
     { tag: 'door_open', name: '문 열림', category: 'object' },
+    { tag: 'footsteps', name: '발소리', category: 'human' },
+    { tag: 'impact', name: '충격음', category: 'action' },
   ],
 };
 
@@ -196,12 +198,12 @@ function buildPlayback(episodeId) {
   const presets = new Map(db.sfxPresets.map((p) => [p.tag, p.name]));
   const cues = [];
   for (const image of images) {
-    for (const l of db.lines.filter((it) => it.image_id === image.id && it.kind !== 'ignore')) {
+    for (const l of db.lines.filter((it) => it.image_id === image.id && !['ignore', 'sfx_text'].includes(it.kind))) {
       cues.push({
         id: `cu_${l.id}`,
         image_index: image.index,
         y_ratio: l.bbox?.y ?? 0,
-        kind: l.kind === 'sfx_text' ? 'sfx' : l.kind,
+        kind: l.kind,
         text: l.text,
         speaker: l.kind === 'dialogue' ? characters.get(l.character_id)?.name ?? null : null,
         audio_url: null,
@@ -312,7 +314,8 @@ const routes = [
       .map((episode) => {
         const images = imagesOf(episode.id);
         const imageIds = new Set(images.map((image) => image.id));
-        const issueCount = db.lines.filter((line) => imageIds.has(line.image_id) && ['stale', 'failed'].includes(line.audio?.status)).length;
+        const issueCount = db.lines.filter((line) => imageIds.has(line.image_id) && !['ignore', 'sfx_text'].includes(line.kind)
+          && ['stale', 'failed'].includes(line.audio?.status)).length;
         const reviewedCount = images.filter((image) => image.reviewed).length;
         const processing = ['analyzing', 'synthesizing'].includes(episode.state)
           ? { job_id: null, step: episode.state === 'analyzing' ? 'structure' : 'dubbing', progress: null, eta_seconds: 95 }
@@ -473,6 +476,16 @@ const routes = [
     return image;
   }],
 
+  // 대사가 있는 인물은 삭제할 수 없다.
+  ['DELETE', /^\/v1\/characters\/([^/]+)$/, ([id]) => {
+    const index = db.characters.findIndex((c) => c.id === id);
+    if (index < 0) notFound();
+    if (db.lines.some((l) => l.character_id === id)) {
+      throw new MockHttpError(409, 'CHARACTER_IN_USE', '대사가 있는 인물은 삭제할 수 없습니다. 먼저 병합하세요.', null);
+    }
+    db.characters.splice(index, 1);
+    return {};
+  }],
   ['PATCH', /^\/v1\/characters\/([^/]+)$/, ([id], body) => {
     const character = db.characters.find((c) => c.id === id) ?? notFound();
     const affectsAudio = ('voice_id' in body && body.voice_id !== character.voice_id)
@@ -483,6 +496,31 @@ const routes = [
       for (const l of db.lines.filter((it) => it.character_id === id)) l.audio.status = 'stale';
     }
     return character;
+  }],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/sfx-cues$/, ([episodeId], body) => {
+    if (!imagesOf(episodeId).some((img) => img.id === body.image_id)) notFound();
+    if (!db.sfxPresets.some((p) => p.tag === body.sfx_tag)) {
+      throw new MockHttpError(422, 'VALIDATION_ERROR', '알 수 없는 효과음 프리셋입니다.', null);
+    }
+    const durations = { rain_loop: 9000, thunder_near: 2500, door_open: 900, footsteps: 1500, impact: 700 };
+    const cue = {
+      id: newId('cu'),
+      image_id: body.image_id,
+      y_ratio: body.y_ratio,
+      sfx_tag: body.sfx_tag,
+      volume: body.volume ?? 1,
+      duration_ms: durations[body.sfx_tag],
+      asset_id: newId('au'),
+      url: null,
+    };
+    db.sfxCues.push(cue);
+    return cue;
+  }],
+  ['DELETE', /^\/v1\/sfx-cues\/([^/]+)$/, ([id]) => {
+    const index = db.sfxCues.findIndex((c) => c.id === id);
+    if (index < 0) notFound();
+    db.sfxCues.splice(index, 1);
+    return {};
   }],
   ['PATCH', /^\/v1\/sfx-cues\/([^/]+)$/, ([id], body) => Object.assign(db.sfxCues.find((c) => c.id === id) ?? notFound(), body)],
   ['POST', /^\/v1\/lines\/([^/]+)\/regenerate$/, ([id]) => {
@@ -518,7 +556,7 @@ const routes = [
       throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '현재 상태에서는 게시할 수 없습니다.', { state: episode.state });
     }
     const ids = new Set(imagesOf(id).map((img) => img.id));
-    const stale = db.lines.filter((l) => ids.has(l.image_id) && l.kind !== 'ignore' && l.audio.status !== 'ready');
+    const stale = db.lines.filter((l) => ids.has(l.image_id) && !['ignore', 'sfx_text'].includes(l.kind) && l.audio.status !== 'ready');
     if (stale.length) {
       throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '다시 만들어야 하는 음성이 남아 있습니다.', { stale_line_ids: stale.map((l) => l.id) });
     }
@@ -587,7 +625,7 @@ const routes = [
 
 // 페이지를 옮겨도 목 데이터(새 회차, 작업 등)가 이어지도록 탭 세션에 보관한다.
 // 목 데이터 구조가 바뀌면 버전을 올려 이전 세션 데이터를 버린다.
-const STORE_KEY = 'naverwebtoon.mock-db.v3';
+const STORE_KEY = 'naverwebtoon.mock-db.v4';
 try {
   const saved = sessionStorage.getItem(STORE_KEY);
   if (saved) Object.assign(db, JSON.parse(saved).db);
@@ -616,7 +654,8 @@ export function handle(method, path, body) {
         const status = method === 'DELETE'
           ? 204
           : method === 'POST' && (/^\/v1\/episodes\/[^/]+\/lines$/.test(pathname)
-            || /^\/v1\/series\/[^/]+\/characters$/.test(pathname))
+            || /^\/v1\/series\/[^/]+\/characters$/.test(pathname)
+            || /^\/v1\/episodes\/[^/]+\/sfx-cues$/.test(pathname))
             ? 201
             : method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200;
         return { status, body: result };

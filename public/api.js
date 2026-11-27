@@ -506,7 +506,19 @@ function mergeSameNameCharacters(characters) {
  */
 function adaptStudio({ studio: raw, episode, series, voices, presets }) {
   const { characters: mergedCharacters, canonicalId } = mergeSameNameCharacters(raw.characters);
-  const mergedLines = raw.lines.map((l) => ({ ...l, raw_character_id: l.character_id, character_id: canonicalId(l.character_id) }));
+  // 효과음 글자(sfx_text)는 읽지 않음으로 다룬다(효과음 소리는 sfx_cues가 담당한다).
+  // 읽지 않는 항목은 음성이 필요 없으므로 음성 상태도 비운다.
+  const mergedLines = raw.lines.map((l) => {
+    const skipped = l.kind === 'ignore' || l.kind === 'sfx_text';
+    return {
+      ...l,
+      raw_character_id: l.character_id,
+      character_id: canonicalId(l.character_id),
+      kind: skipped ? 'ignore' : l.kind,
+      audio: skipped ? null : l.audio,
+      drawn: l.kind === 'sfx_text', // 원고에 그려진 글자 표시용
+    };
+  });
   const usedIds = new Set(mergedLines.map((l) => l.character_id));
   const studio = {
     ...raw,
@@ -531,16 +543,15 @@ function adaptStudio({ studio: raw, episode, series, voices, presets }) {
       if (!l.audio?.duration_ms) continue;
       const duration = l.audio.duration_ms / 1000;
       startOf.set(l.id, cursor);
-      const track = l.kind === 'sfx_text' ? 'sfx' : l.kind;
       const speaker = characters.get(l.character_id);
       const label = l.kind === 'dialogue' ? `${speaker?.name ?? '화자 미지정'} · ${l.text}` : l.kind === 'narration' ? `원문 · ${truncate(l.text, 12)}` : l.text;
-      clips[track]?.push({
+      clips[l.kind]?.push({
         id: `clip_${l.id}`,
         itemId: l.id,
         label,
         start: cursor,
         duration,
-        kind: track,
+        kind: l.kind,
         audioUrl: l.audio?.url ?? null,
         volume: 1,
       });
@@ -574,10 +585,10 @@ function adaptStudio({ studio: raw, episode, series, voices, presets }) {
       items.push({
         id: l.id,
         editable: 'line',
-        type: l.kind === 'sfx_text' ? 'sfx' : l.kind,
+        type: l.kind,
         kind: l.kind,
         order: l.order,
-        source: l.kind === 'sfx_text' ? 'drawn' : 'manuscript',
+        source: l.drawn ? 'drawn' : 'manuscript',
         speakerId: l.character_id,
         // 서버에 실제로 연결된 인물 id. 같은 이름 인물을 합칠 때 쓴다.
         rawCharacterId: l.raw_character_id,
@@ -657,7 +668,10 @@ function adaptStudio({ studio: raw, episode, series, voices, presets }) {
     },
     scenes,
     sceneDetails,
-    speakers: studio.characters.filter((c) => c.kind !== 'narration').map((c) => ({ id: c.id, name: c.name })),
+    // 화자 선택·필터에는 이번 회차에 대사가 있는 인물만 보인다. 전체 인물은 characters에 있다.
+    speakers: studio.characters
+      .filter((c) => c.kind !== 'narration' && studio.lines.some((l) => l.character_id === c.id && l.kind !== 'ignore'))
+      .map((c) => ({ id: c.id, name: c.name })),
     characters: studio.characters.map((c) => ({
       id: c.id,
       memberIds: c.member_ids ?? [c.id],
@@ -719,6 +733,23 @@ export async function updateLine(lineId, patch) {
 /** 여러 대사의 화자를 한 인물로 바꾼다. 같은 이름 인물을 합칠 때 쓴다. */
 export async function reassignLines(lineIds, characterId) {
   await Promise.all(lineIds.map((lineId) => updateLine(lineId, { character_id: characterId })));
+}
+
+/**
+ * 화자를 옮기거나 비운 뒤, 대사가 남지 않은 이전 인물을 지운다. DELETE /v1/characters/{id}
+ * studio는 옮기기 전의 스튜디오 데이터다. 이번 회차에 대사가 남으면 요청하지 않는다.
+ * 다른 회차에서 쓰는 인물은 서버가 거절(409)한다. 정리에 실패해도 화자 변경은 유지한다.
+ */
+export async function deleteLeftoverCharacter(studio, character, movedLineIds) {
+  if (!character || character.kind === 'narration') return;
+  const moved = new Set(movedLineIds);
+  const stillUsed = Object.values(studio.sceneDetails).some((scene) => scene.items.some((item) => (
+    item.editable === 'line' && item.speakerId === character.id && !moved.has(item.id)
+  )));
+  if (stillUsed) return;
+  await Promise.allSettled((character.memberIds ?? [character.id]).map((id) => (
+    request(`/v1/characters/${enc(id)}`, { method: 'DELETE' })
+  )));
 }
 
 /** 묶인 인물(memberIds) 모두에 같은 이름을 적용한다. */
@@ -795,6 +826,20 @@ export async function updateSfxCue(cueId, { tag, volume }) {
   return request(`/v1/sfx-cues/${enc(cueId)}`, { method: 'PATCH', body: { sfx_tag: tag, volume: volume / 100 } });
 }
 
+/** 효과음 큐 추가. POST /v1/episodes/{id}/sfx-cues (volume 0~1) */
+export async function createSfxCue(episodeId, { imageId, yRatio, tag, volume }) {
+  return request(`/v1/episodes/${enc(episodeId)}/sfx-cues`, {
+    method: 'POST',
+    body: { image_id: imageId, y_ratio: yRatio, sfx_tag: tag, volume: volume / 100 },
+    idempotent: true,
+  });
+}
+
+/** 효과음 큐 삭제. DELETE /v1/sfx-cues/{id} */
+export async function deleteSfxCue(cueId) {
+  return request(`/v1/sfx-cues/${enc(cueId)}`, { method: 'DELETE' });
+}
+
 /** 대사 하나 재생성. POST /v1/lines/{id}/regenerate → 200 { audio } 또는 202 { job } */
 export async function regenerateLine(lineId) {
   const result = await request(`/v1/lines/${enc(lineId)}/regenerate`, { method: 'POST', body: { force: false }, idempotent: true });
@@ -842,13 +887,14 @@ export async function getPublishPreview(episodeId) {
       imageIndex: cue.image_index,
       text: cue.kind === 'sfx' ? cue.label ?? cue.text : cue.text,
       speaker: cue.speaker ?? null,
-      audioUrl: cue.audio_url,
+      audioUrl: cue.audio_url ?? null,
+      volume: cue.volume ?? 1,
       start,
       duration,
     };
   });
   const durationSeconds = Math.max(0, cursor - CLIP_GAP, ...cues.map((c) => c.start + c.duration));
-  return { images, cues, durationSeconds };
+  return { images, cues, durationSeconds, audioUrlsExpireAt: preview.playback.urls_expire_at ?? null };
 }
 
 /**

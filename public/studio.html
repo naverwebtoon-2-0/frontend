@@ -75,6 +75,9 @@
           <button class="button button--elevated inspector__add-dialogue" id="add-dialogue" type="button" aria-haspopup="dialog">
             ＋ 말풍선
           </button>
+          <button class="button button--elevated inspector__add-dialogue" id="add-sfx" type="button" aria-haspopup="dialog">
+            ＋ 효과음
+          </button>
           <button class="button button--elevated inspector__speaker-button" id="manage-speakers" type="button" aria-haspopup="dialog">
             인물 이름 관리
           </button>
@@ -239,13 +242,17 @@
   <dialog class="modal modal--wide" id="sfx-modal" aria-labelledby="sfx-modal-title">
     <form class="modal__body" novalidate>
       <div class="modal__heading">
-        <h2 id="sfx-modal-title">효과음 설정</h2>
+        <h2 id="sfx-modal-title" data-slot="sfx-modal-title">효과음 설정</h2>
         <p data-slot="sfx-modal-sub"></p>
       </div>
       <hr class="modal__divider">
       <label class="modal__field">
         <span class="modal__label">효과음 프리셋</span>
         <select class="modal__select" name="preset"></select>
+      </label>
+      <label class="modal__field" id="sfx-position">
+        <span class="modal__label">재생 위치</span>
+        <select class="modal__select" name="position"></select>
       </label>
       <div class="modal__row">
         <label class="volume">
@@ -256,7 +263,7 @@
       <p class="modal__error" role="alert" hidden></p>
       <div class="modal__actions">
         <button class="modal__button" type="button" data-close>취소</button>
-        <button class="modal__button modal__button--primary" type="submit">적용하기</button>
+        <button class="modal__button modal__button--primary" type="submit" data-slot="sfx-submit">적용하기</button>
       </div>
     </form>
   </dialog>
