@@ -24,6 +24,12 @@ const SCENE_STATUS = {
 const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음', ignore: '읽지 않음' };
 const SOURCE_LABEL = { manuscript: '원고 텍스트', drawn: '그려진 글자', alt: '이미지 설명', preset: '효과음 프리셋' };
 const LINE_KIND_LABEL = { narration: '원문 나레이션', sfx_text: '효과음 글자', ignore: '읽지 않음' };
+const DIALOGUE_TYPE_OPTIONS = [
+  ['dialogue', '대사'],
+  ['narration', LINE_KIND_LABEL.narration],
+  ['sfx_text', LINE_KIND_LABEL.sfx_text],
+  ['ignore', LINE_KIND_LABEL.ignore],
+];
 // 어두운 스튜디오 화면에서 서로 충분히 구분되는 화자 색상.
 // 동일 인물이 여러 character ID로 감지돼도 이름이 같으면 같은 색을 사용한다.
 const SPEAKER_COLORS = ['#f2a65a', '#5c8dff', '#f472b6', '#4fd1c5', '#c084fc', '#facc15', '#fb7185', '#a3e635'];
@@ -275,6 +281,8 @@ function renderItem(item) {
   const kind = li.querySelector('[data-field="kind"]');
   if (item.editable === 'line') {
     if (item.kind === 'dialogue') {
+      for (const [value, label] of DIALOGUE_TYPE_OPTIONS) kind.append(new Option(label, value));
+      kind.value = 'dialogue';
       const speaker = state.speakers.find((candidate) => candidate.id === item.speakerId);
       const input = document.createElement('input');
       input.className = 'speaker-name-input';
@@ -286,9 +294,7 @@ function renderItem(item) {
       input.dataset.field = 'speaker';
       input.setAttribute('list', 'studio-speaker-options');
       input.setAttribute('aria-label', '화자 이름');
-      const field = kind.closest('.pill-select');
-      field.classList.add('pill-select--input');
-      field.replaceChildren(input);
+      kind.closest('.pill-select').insertAdjacentElement('afterend', input);
     } else {
       for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
       kind.value = item.kind;
@@ -633,7 +639,7 @@ function syncAudioTracks({ seeked = false } = {}) {
       && (seeked || Math.abs(audio.currentTime - position) > 0.7)) {
       try { audio.currentTime = position; } catch { /* 메타데이터 로드를 기다린다. */ }
     }
-    if (audio.paused && !state.audioPlayPending.has(audio)) {
+    if (audio.paused && !audio.ended && !state.audioPlayPending.has(audio)) {
       state.audioPlayPending.add(audio);
       audio.play().catch((error) => {
         // 탐색·일시정지로 재생 요청이 취소되는 AbortError는 정상 흐름이다.
@@ -648,10 +654,23 @@ function syncAudioTracks({ seeked = false } = {}) {
 }
 
 let lastFrame;
+function unfinishedSpeechClip(nextTime) {
+  const clip = allClips().find((candidate) => candidate.kind !== 'sfx'
+    && candidate.audioUrl
+    && state.time >= candidate.start
+    && state.time < candidate.start + candidate.duration
+    && nextTime >= candidate.start + candidate.duration);
+  if (!clip) return null;
+  const audio = state.audioTracks.get(clip.id);
+  return audio && !audio.ended ? clip : null;
+}
+
 function tick(now) {
   if (!state.playing) return;
   const end = state.stopAt ?? state.studio.timeline.durationSeconds;
-  state.time = Math.min(end, state.time + (now - lastFrame) / 1000);
+  const nextTime = Math.min(end, state.time + (now - lastFrame) / 1000);
+  const unfinished = unfinishedSpeechClip(nextTime);
+  state.time = unfinished ? unfinished.start + unfinished.duration - 0.001 : nextTime;
   lastFrame = now;
   if (state.time >= end) {
     state.playing = false;

@@ -504,6 +504,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         label,
         start: cursor,
         duration,
+        kind: track,
         audioUrl: l.audio?.url ?? null,
         volume: 1,
       });
@@ -520,6 +521,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         label: presetName.get(cue.sfx_tag) ?? cue.sfx_tag,
         start,
         duration: (cue.duration_ms ?? DEFAULT_SFX_SECONDS * 1000) / 1000,
+        kind: 'sfx',
         audioUrl: cue.url ?? cue.audio_url ?? null,
         volume: cue.volume ?? 1,
       });

@@ -96,7 +96,7 @@ function syncAudioTracks({ seeked = false } = {}) {
       && (seeked || Math.abs(audio.currentTime - position) > 0.7)) {
       try { audio.currentTime = position; } catch { /* 메타데이터를 기다린다. */ }
     }
-    if (audio.paused && !state.audioPlayPending.has(audio)) {
+    if (audio.paused && !audio.ended && !state.audioPlayPending.has(audio)) {
       state.audioPlayPending.add(audio);
       audio.play().catch((error) => {
         if (error?.name === 'AbortError' || state.audioErrorReported) return;
@@ -215,10 +215,23 @@ function persist({ completed = false } = {}) {
 // ── 재생 ─────────────────────────────────────────────
 
 let lastFrame;
+function unfinishedSpeechCue(nextTime) {
+  const cue = state.episode.cues.find((candidate) => candidate.kind !== 'sfx'
+    && candidate.audioUrl
+    && state.time >= candidate.start
+    && state.time < candidate.start + candidate.duration
+    && nextTime >= candidate.start + candidate.duration);
+  if (!cue) return null;
+  const audio = state.audioTracks.get(cue.id);
+  return audio && !audio.ended ? cue : null;
+}
+
 function tick(now) {
   if (!state.playing) return;
   const { durationSeconds } = state.episode;
-  state.time = Math.min(durationSeconds, state.time + ((now - lastFrame) / 1000) * state.settings.playbackRate);
+  const nextTime = Math.min(durationSeconds, state.time + ((now - lastFrame) / 1000) * state.settings.playbackRate);
+  const unfinished = unfinishedSpeechCue(nextTime);
+  state.time = unfinished ? unfinished.start + unfinished.duration - 0.001 : nextTime;
   lastFrame = now;
   const before = state.sceneIndex;
   const sceneChanged = render();
