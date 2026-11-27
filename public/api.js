@@ -527,6 +527,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         editable: 'line',
         type: l.kind === 'sfx_text' ? 'sfx' : l.kind,
         kind: l.kind,
+        order: l.order,
         source: l.kind === 'sfx_text' ? 'drawn' : 'manuscript',
         speakerId: l.character_id,
         characterId: l.character_id ?? (l.kind === 'narration' ? narrator?.id : null),
@@ -655,6 +656,21 @@ export async function getScene(episodeId, sceneId) {
  */
 export async function updateLine(lineId, patch) {
   return request(`/v1/lines/${enc(lineId)}`, { method: 'PATCH', body: patch });
+}
+
+/** 현재 장면에 말풍선 대사를 추가한다. POST /v1/episodes/{id}/lines */
+export async function createDialogueLine(episodeId, { imageId, text, characterId }) {
+  return request(`/v1/episodes/${enc(episodeId)}/lines`, {
+    method: 'POST',
+    body: {
+      image_id: imageId,
+      text,
+      kind: 'dialogue',
+      character_id: characterId,
+      emotion: 'neutral',
+    },
+    idempotent: true,
+  });
 }
 
 /** 인물 이름 변경. PATCH /v1/characters/{id} */

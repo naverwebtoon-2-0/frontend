@@ -143,7 +143,11 @@ function regenerateJobView(job) {
   if (done < total) {
     return { ...job.base, status: 'running', step: 'dubbing', progress: { done, total }, finished_at: null };
   }
-  for (const l of db.lines.filter((it) => job.line_ids.includes(it.id))) l.audio.status = 'ready';
+  for (const l of db.lines.filter((it) => job.line_ids.includes(it.id))) {
+    l.audio.status = 'ready';
+    l.audio.asset_id ??= newId('au');
+    l.audio.duration_ms ??= Math.max(1200, l.text.length * 120);
+  }
   return { ...job.base, status: 'succeeded', step: 'done', progress: { done: total, total }, finished_at: new Date().toISOString() };
 }
 
@@ -414,6 +418,32 @@ const routes = [
       sfx_cues: db.sfxCues.filter((c) => imageIds.has(c.image_id)),
     };
   }],
+  ['POST', /^\/v1\/episodes\/([^/]+)\/lines$/, ([episodeId], body) => {
+    episodeOf(episodeId);
+    const image = imagesOf(episodeId).find((item) => item.id === body.image_id) ?? notFound();
+    const text = body.text?.trim();
+    if (!text) throw new MockHttpError(422, 'VALIDATION_ERROR', '말풍선 텍스트를 입력해주세요.', null);
+    if (body.character_id && !db.characters.some((character) => character.id === body.character_id)) notFound();
+    const order = Math.max(0, ...db.lines.filter((line) => line.image_id === image.id).map((line) => line.order)) + 1;
+    const id = newId('ln');
+    const created = {
+      id,
+      image_id: image.id,
+      order,
+      text,
+      original_text: null,
+      bbox: null,
+      y_ratio: 0,
+      kind: body.kind ?? 'dialogue',
+      character_id: body.character_id ?? null,
+      emotion: body.emotion ?? 'neutral',
+      ocr_confidence: null,
+      audio: { asset_id: null, url: null, duration_ms: null, status: 'stale' },
+      flags: [],
+    };
+    db.lines.push(created);
+    return created;
+  }],
   ['PATCH', /^\/v1\/lines\/([^/]+)$/, ([id], body) => {
     const target = db.lines.find((l) => l.id === id) ?? notFound();
     const affectsAudio = ['text', 'character_id', 'emotion', 'kind'].some((k) => k in body && body[k] !== target[k]);
@@ -443,6 +473,8 @@ const routes = [
   ['POST', /^\/v1\/lines\/([^/]+)\/regenerate$/, ([id]) => {
     const target = db.lines.find((l) => l.id === id) ?? notFound();
     target.audio.status = 'ready';
+    target.audio.asset_id ??= newId('au');
+    target.audio.duration_ms ??= Math.max(1200, target.text.length * 120);
     // 캐시 적중을 흉내 내 200 + audio로 바로 돌려준다.
     return { audio: target.audio };
   }],
@@ -568,7 +600,9 @@ export function handle(method, path, body) {
         persist();
         const status = method === 'DELETE'
           ? 204
-          : method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200;
+          : method === 'POST' && /^\/v1\/episodes\/[^/]+\/lines$/.test(pathname)
+            ? 201
+            : method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200;
         return { status, body: result };
       } catch (err) {
         if (err instanceof MockHttpError) return { status: err.status, body: err.body };

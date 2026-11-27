@@ -47,6 +47,7 @@ const state = {
   time: 0,
   window: 36,
   playing: false,
+  stopAt: null, // 개별 항목 재생일 때 멈출 시각(초). null이면 끝까지 재생
   previewZoom: 75,
   timelineZoom: 100,
 };
@@ -184,6 +185,7 @@ function applyPreviewZoom() {
 function lineKindOptions() {
   return [
     ['narration', LINE_KIND_LABEL.narration],
+    ['dialogue:', '화자 미지정 · 대사'],
     ...state.speakers.map((s) => [`dialogue:${s.id}`, `${s.name} · 대사`]),
     ['sfx_text', LINE_KIND_LABEL.sfx_text],
     ['ignore', LINE_KIND_LABEL.ignore],
@@ -241,7 +243,7 @@ function renderItem(item) {
   const kind = li.querySelector('[data-field="kind"]');
   if (item.editable === 'line') {
     for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
-    kind.value = item.kind === 'dialogue' ? `dialogue:${item.speakerId}` : item.kind;
+    kind.value = item.kind === 'dialogue' ? `dialogue:${item.speakerId ?? ''}` : item.kind;
   } else {
     kind.append(new Option(TYPE_LABEL[item.type], item.type));
     kind.disabled = true;
@@ -482,19 +484,27 @@ function updatePlayback() {
 let lastFrame;
 function tick(now) {
   if (!state.playing) return;
-  state.time = Math.min(state.studio.timeline.durationSeconds, state.time + (now - lastFrame) / 1000);
+  const end = state.stopAt ?? state.studio.timeline.durationSeconds;
+  state.time = Math.min(end, state.time + (now - lastFrame) / 1000);
   lastFrame = now;
-  if (state.time >= state.studio.timeline.durationSeconds) state.playing = false;
+  if (state.time >= end) {
+    state.playing = false;
+    state.stopAt = null;
+  }
   updatePlayback();
   if (state.playing) requestAnimationFrame(tick);
 }
 
-function setPlaying(playing) {
+/** stopAt을 주면 그 시각(초)에서 멈춘다. 개별 항목 재생에 쓴다. */
+function setPlaying(playing, { stopAt = null } = {}) {
+  const wasPlaying = state.playing;
   state.playing = playing;
+  state.stopAt = playing ? stopAt : null;
   if (playing) {
     if (state.time >= state.studio.timeline.durationSeconds) state.time = 0;
     lastFrame = performance.now();
-    requestAnimationFrame(tick);
+    // 이미 재생 중이면 기존 루프가 이어 돈다. 루프를 하나 더 돌리면 두 배속이 된다.
+    if (!wasPlaying) requestAnimationFrame(tick);
   }
   updatePlayback();
 }
@@ -551,8 +561,15 @@ function bindEvents() {
     switch (trigger?.dataset.action) {
       case 'play': {
         const clip = allClips().find((c) => c.itemId === item.id);
-        if (clip) seek(clip.start);
-        setPlaying(true);
+        if (!clip) break;
+        const end = clip.start + clip.duration;
+        // 같은 항목을 재생 중이면 일시정지, 아니면 그 항목 구간만 재생한다.
+        if (state.playing && state.stopAt === end) {
+          setPlaying(false);
+          break;
+        }
+        seek(clip.start);
+        setPlaying(true, { stopAt: end });
         break;
       }
       case 'edit-text': modals.openText(item); break;
@@ -565,6 +582,7 @@ function bindEvents() {
   });
 
   $('#batch-regenerate').addEventListener('click', () => modals.openBatch());
+  $('#add-dialogue').addEventListener('click', () => modals.openDialogue());
   $('#manage-speakers').addEventListener('click', () => modals.openSpeakerNames());
 
   $('#item-list').addEventListener('change', (event) => {
@@ -573,7 +591,7 @@ function bindEvents() {
     if (!select || !item) return;
     const [kind, characterId] = select.value.split(':');
     // 대사가 아닌 종류로 바꾸면 화자를 비운다.
-    void changeLine(item.dataset.itemId, { kind, character_id: characterId ?? null });
+    void changeLine(item.dataset.itemId, { kind, character_id: characterId || null });
   });
 
   $('#manuscript').addEventListener('click', (event) => {

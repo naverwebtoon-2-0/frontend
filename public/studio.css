@@ -419,10 +419,22 @@ body.studio {
   font-weight: var(--weight-regular);
 }
 
-.inspector__speaker-button {
+.inspector__heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector__speaker-button,
+.inspector__add-dialogue {
   min-height: 34px;
   padding: 6px 10px;
   font-size: 14px;
+}
+
+.inspector__add-dialogue {
+  border-color: rgba(5, 214, 134, 0.45);
+  color: var(--clova-green);
 }
 
 .tabs {
