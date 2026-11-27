@@ -419,6 +419,24 @@ body.studio {
   font-weight: var(--weight-regular);
 }
 
+.inspector__heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector__speaker-button,
+.inspector__add-dialogue {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.inspector__add-dialogue {
+  border-color: rgba(5, 214, 134, 0.45);
+  color: var(--clova-green);
+}
+
 .tabs {
   display: flex;
   gap: var(--space-100);
@@ -453,10 +471,27 @@ body.studio {
 }
 
 .sub-pill {
+  position: relative;
   padding: 4px 8px;
   border-radius: 4px;
   background: var(--studio-bg-hover);
   color: var(--studio-text-secondary);
+}
+
+.sub-pill--speaker {
+  padding-left: 20px;
+}
+
+.sub-pill--speaker::before {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--speaker-color);
+  content: "";
+  transform: translateY(-50%);
 }
 
 .sub-pill--empty {
@@ -522,16 +557,29 @@ body.studio {
 
 .editor-item__heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--space-200);
   width: 100%;
 }
 
 .editor-item__identity {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: var(--space-100);
+  min-width: 0;
   white-space: nowrap;
+}
+
+.editor-item[data-type="dialogue"] .editor-item__identity {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+.editor-item[data-type="dialogue"] .editor-item__identity [data-slot="source"] {
+  flex-basis: 100%;
+  margin-left: 32px;
 }
 
 .editor-item__text {
@@ -561,6 +609,32 @@ body.studio {
   font-size: var(--text-small);
   line-height: 1.4;
   cursor: pointer;
+}
+
+.speaker-name-input {
+  box-sizing: border-box;
+  flex: 1 1 96px;
+  width: min(116px, 100%);
+  min-width: 80px;
+  max-width: 116px;
+  min-height: 30px;
+  padding: var(--space-100) var(--space-200);
+  border: 1px solid var(--studio-border-default);
+  border-radius: var(--radius-100);
+  background: var(--studio-bg-hover);
+  color: var(--studio-text-primary);
+  font: inherit;
+  font-size: var(--text-small);
+  line-height: 1.4;
+}
+
+.editor-item[data-type="dialogue"] .speaker-name-input {
+  border-color: var(--track);
+  box-shadow: inset 3px 0 0 var(--track);
+}
+
+.speaker-name-input::placeholder {
+  color: var(--studio-text-muted);
 }
 
 .pill-select::after {

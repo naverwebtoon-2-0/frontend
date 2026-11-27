@@ -18,7 +18,7 @@
 }
 
 .dashboard #dashboard-stats[hidden],
-.dashboard #dashboard-work[hidden] {
+.dashboard #dashboard-works[hidden] {
   display: none;
 }
 
@@ -171,19 +171,38 @@
   color: #ff8a80;
 }
 
-/* 패널 제목: 32px → 작품명 20px, 섹션 제목 18px */
+/* 작품 목록 */
+.dashboard .dashboard-works,
+.dashboard .work-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-400);
+}
+
+.dashboard .dashboard-works__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-400);
+}
+
+.dashboard .dashboard-works__heading > span {
+  color: var(--studio-text-secondary);
+}
+
+/* 패널 제목: 작품명 20px, 섹션 제목 18px */
 .dashboard .panel {
   gap: var(--space-400);
 }
 
-.dashboard #project-title {
+.dashboard .work-card__title {
   font-size: 20px;
   font-weight: var(--weight-strong);
   line-height: 1.3;
   letter-spacing: -0.01em;
 }
 
-.dashboard #recent-title {
+.dashboard .work-card__recent-title {
   font-size: 18px;
   font-weight: var(--weight-strong);
   line-height: 1.3;

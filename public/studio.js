@@ -1,6 +1,15 @@
 // A4 제작 스튜디오: 장면 목록 · 원고 미리보기 · 장면 편집 · 오디오 타임라인
 // 데이터는 api.js의 getStudio()가 명세 §6 응답을 바꿔 준다. 장면 = 원고 이미지 한 장.
-import { completeSceneReview, getScene, getStudio, updateLine } from './api.js';
+import {
+  completeSceneReview,
+  createCharacter,
+  getScene,
+  characterNameKey,
+  getStudio,
+  reassignLines,
+  renameCharacterGroup,
+  updateLine,
+} from './api.js';
 import { fillSlots, formatDuration, setProgress } from './common.js';
 import { setupModals } from './studio-modals.js';
 
@@ -17,6 +26,15 @@ const SCENE_STATUS = {
 const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음', ignore: '읽지 않음' };
 const SOURCE_LABEL = { manuscript: '원고 텍스트', drawn: '그려진 글자', alt: '이미지 설명', preset: '효과음 프리셋' };
 const LINE_KIND_LABEL = { narration: '원문 나레이션', sfx_text: '효과음 글자', ignore: '읽지 않음' };
+const DIALOGUE_TYPE_OPTIONS = [
+  ['dialogue', '대사'],
+  ['narration', LINE_KIND_LABEL.narration],
+  ['sfx_text', LINE_KIND_LABEL.sfx_text],
+  ['ignore', LINE_KIND_LABEL.ignore],
+];
+// 어두운 스튜디오 화면에서 서로 충분히 구분되는 화자 색상.
+// 동일 인물이 여러 character ID로 감지돼도 이름이 같으면 같은 색을 사용한다.
+const SPEAKER_COLORS = ['#f2a65a', '#5c8dff', '#f472b6', '#4fd1c5', '#c084fc', '#facc15', '#fb7185', '#a3e635'];
 const TABS = [
   { key: 'all', label: '전체', types: ['narration', 'description', 'dialogue', 'sfx', 'ignore'] },
   { key: 'text', label: '텍스트', types: ['narration', 'dialogue'] },
@@ -47,6 +65,10 @@ const state = {
   time: 0,
   window: 36,
   playing: false,
+  stopAt: null, // 개별 항목 재생일 때 멈출 시각(초). null이면 끝까지 재생
+  audioTracks: new Map(),
+  audioPlayPending: new WeakSet(),
+  audioErrorReported: false,
   previewZoom: 75,
   timelineZoom: 100,
 };
@@ -90,6 +112,23 @@ function itemLabel(item) {
 function itemText(item) {
   if (item.editable === 'cue' && item.sfx) return `프리셋 · ${item.sfx.preset} · 볼륨 ${item.sfx.volume}%`;
   return item.text;
+}
+
+function speakerColor(speakerId) {
+  const speaker = state.speakers.find((candidate) => candidate.id === speakerId);
+  if (!speaker) return SPEAKER_COLORS[0];
+  const normalizedName = speaker.name.trim().toLocaleLowerCase('ko-KR');
+  const names = [...new Set(state.speakers.map((candidate) => candidate.name.trim().toLocaleLowerCase('ko-KR')))];
+  const index = names.indexOf(normalizedName);
+  return SPEAKER_COLORS[(index < 0 ? 0 : index) % SPEAKER_COLORS.length];
+}
+
+function applySpeakerColor(element, item) {
+  if (item?.type === 'dialogue') element.style.setProperty('--track', speakerColor(item.speakerId));
+}
+
+function isProvisionalSpeaker(speaker) {
+  return Boolean(speaker?.autoNamed) || /^인물\s*\d+$/.test(speaker?.name?.trim() ?? '');
 }
 
 // ── 헤더 ─────────────────────────────────────────────
@@ -152,6 +191,7 @@ function renderPreview() {
     marker.className = item.editable === 'cue' ? 'ocr-marker ocr-marker--cue' : 'ocr-marker';
     marker.dataset.type = item.type;
     marker.dataset.itemId = item.id;
+    applySpeakerColor(marker, item);
     marker.setAttribute('aria-label', `${item.number}번 ${itemLabel(item)}: ${itemText(item)}`);
     if (item.id === state.itemId) marker.setAttribute('aria-current', 'true');
     Object.assign(marker.style, {
@@ -184,6 +224,7 @@ function applyPreviewZoom() {
 function lineKindOptions() {
   return [
     ['narration', LINE_KIND_LABEL.narration],
+    ['dialogue:', '화자 미지정 · 대사'],
     ...state.speakers.map((s) => [`dialogue:${s.id}`, `${s.name} · 대사`]),
     ['sfx_text', LINE_KIND_LABEL.sfx_text],
     ['ignore', LINE_KIND_LABEL.ignore],
@@ -229,6 +270,7 @@ function renderItem(item) {
   const li = clone('editor-item');
   li.dataset.type = item.type;
   li.dataset.itemId = item.id;
+  applySpeakerColor(li, item);
   if (item.id === state.itemId) li.setAttribute('aria-current', 'true');
 
   fillSlots(li, {
@@ -240,8 +282,25 @@ function renderItem(item) {
 
   const kind = li.querySelector('[data-field="kind"]');
   if (item.editable === 'line') {
-    for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
-    kind.value = item.kind === 'dialogue' ? `dialogue:${item.speakerId}` : item.kind;
+    if (item.kind === 'dialogue') {
+      for (const [value, label] of DIALOGUE_TYPE_OPTIONS) kind.append(new Option(label, value));
+      kind.value = 'dialogue';
+      const speaker = state.speakers.find((candidate) => candidate.id === item.speakerId);
+      const input = document.createElement('input');
+      input.className = 'speaker-name-input';
+      input.type = 'text';
+      input.maxLength = 100;
+      input.autocomplete = 'off';
+      input.placeholder = '인물명 입력';
+      input.value = speaker?.name ?? '';
+      input.dataset.field = 'speaker';
+      input.setAttribute('list', 'studio-speaker-options');
+      input.setAttribute('aria-label', '화자 이름');
+      kind.closest('.pill-select').insertAdjacentElement('afterend', input);
+    } else {
+      for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
+      kind.value = item.kind;
+    }
   } else {
     kind.append(new Option(TYPE_LABEL[item.type], item.type));
     kind.disabled = true;
@@ -255,6 +314,9 @@ function renderItem(item) {
 function renderInspector() {
   const { scene } = state;
   fillSlots(document, { 'inspector-title': `${sceneName(scene.number)} 편집` });
+  $('#studio-speaker-options').replaceChildren(...state.speakers.map((speaker) => (
+    Object.assign(document.createElement('option'), { value: speaker.name })
+  )));
 
   $('#item-tabs').replaceChildren(...TABS.map((tab) => {
     const count = scene.items.filter((item) => tab.types.includes(item.type)).length;
@@ -283,6 +345,10 @@ function renderInspector() {
         'data-sub-filter': key,
         'aria-pressed': String(state.subFilter === key),
       });
+      if (key !== 'narration') {
+        chip.classList.add('sub-pill--speaker');
+        chip.style.setProperty('--speaker-color', speakerColor(key));
+      }
       chip.disabled = count === 0;
       return chip;
     });
@@ -354,11 +420,13 @@ async function selectScene(sceneId, { keepItem = false } = {}) {
 
 /** 서버 데이터를 다시 받아 전체를 다시 그린다. 수정 직후 상태(stale 등)를 서버 기준으로 맞춘다. */
 async function reloadStudio() {
+  resetAudioTracks();
   state.studio = await getStudio(episodeId);
   state.speakers = state.studio.speakers;
   renderHeader();
   renderTimeline();
   await selectScene(state.sceneId, { keepItem: true });
+  preloadAudio();
 }
 
 async function changeLine(lineId, patch) {
@@ -369,6 +437,62 @@ async function changeLine(lineId, patch) {
   } catch (err) {
     toast(err.message || '항목을 변경하지 못했습니다.');
     renderInspector();
+  }
+}
+
+async function changeSpeakerName(field, itemId) {
+  if (field.dataset.saving === 'true') return;
+  const name = field.value.trim();
+  if (!name) {
+    field.setCustomValidity('인물명을 입력해주세요.');
+    field.reportValidity();
+    return;
+  }
+  field.setCustomValidity('');
+  const item = currentItem(itemId);
+  const currentSpeaker = state.studio.characters.find((character) => character.id === item?.speakerId);
+  if (currentSpeaker && characterNameKey(currentSpeaker.name) === characterNameKey(name)) return;
+
+  field.dataset.saving = 'true';
+  field.disabled = true;
+  try {
+    const existing = state.studio.characters.find((character) => (
+      character.kind !== 'narration'
+      && character.id !== currentSpeaker?.id
+      && characterNameKey(character.name) === characterNameKey(name)
+    ));
+    if (currentSpeaker && isProvisionalSpeaker(currentSpeaker)) {
+      // 아직 이름을 확정하지 않은 동일 화자 ID의 대사에만 이름을 일괄 적용한다.
+      const affectedLineIds = state.studio.scenes.flatMap((scene) => (
+        state.studio.sceneDetails[scene.id].items
+          .filter((candidate) => candidate.editable === 'line' && candidate.speakerId === currentSpeaker.id)
+          .map((candidate) => candidate.id)
+      ));
+      if (existing) {
+        // 이미 같은 이름의 인물이 있으면 새 인물을 만들지 않고 그 인물로 합친다.
+        await reassignLines(affectedLineIds, existing.id);
+        await reloadStudio();
+        toast(`대사 ${affectedLineIds.length}개를 기존 인물 ‘${existing.name}’에 합쳤습니다.`);
+        return;
+      }
+      await renameCharacterGroup(currentSpeaker, name);
+      await reloadStudio();
+      toast(`같은 인물로 인식된 대사 ${affectedLineIds.length}개에 ‘${name}’ 이름을 적용했습니다.`);
+      return;
+    }
+    const character = existing ?? await createCharacter(state.studio.episode.seriesId, name, {
+      voiceId: currentSpeaker?.voiceId,
+      voiceParams: currentSpeaker?.voiceParams,
+    });
+    await updateLine(itemId, { kind: 'dialogue', character_id: character.id });
+    await reloadStudio();
+    toast(`이 대사의 인물명만 ‘${name}’ 이름으로 변경했습니다.`);
+  } catch (error) {
+    toast(error.message || '화자를 저장하지 못했습니다.');
+    renderInspector();
+  } finally {
+    field.dataset.saving = 'false';
+    if (field.isConnected) field.disabled = false;
   }
 }
 
@@ -413,6 +537,8 @@ function renderTimeline() {
       el.dataset.clipId = clip.id;
       el.dataset.start = clip.start;
       if (clip.itemId) el.dataset.clipItem = clip.itemId;
+      const clipItem = clip.itemId ? itemContext(clip.itemId)?.item : null;
+      applySpeakerColor(el, clipItem);
       el.style.left = percent(clip.start);
       el.style.width = percent(clip.duration);
       el.setAttribute('aria-label', `${clip.label}, ${formatDuration(clip.start)}부터`);
@@ -478,29 +604,159 @@ function updatePlayback() {
   $('#timeline-play').setAttribute('aria-label', state.playing ? '일시정지' : '재생');
 }
 
-// 음원 URL(audio.url)이 오면 <audio>로 바꾼다. 지금은 재생 위치만 움직인다.
+function resetAudioTracks() {
+  state.playing = false;
+  state.stopAt = null;
+  for (const audio of state.audioTracks.values()) {
+    audio.pause();
+    audio.dataset.disposed = 'true';
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  state.audioTracks.clear();
+  state.audioErrorReported = false;
+}
+
+function pauseAudioTracks() {
+  for (const audio of state.audioTracks.values()) audio.pause();
+}
+
+/** 재생 위치 기준 이만큼(초) 앞까지 시작하는 음원은 미리 받아 둔다. */
+const PRELOAD_AHEAD_SECONDS = 15;
+
+function activeAudioClips() {
+  return allClips().filter((clip) => clip.audioUrl
+    && state.time >= clip.start && state.time < clip.start + clip.duration);
+}
+
+function ensureAudio(clip) {
+  let audio = state.audioTracks.get(clip.id);
+  if (audio) return audio;
+  audio = new Audio(clip.audioUrl);
+  audio.preload = 'auto';
+  audio.addEventListener('error', () => {
+    if (audio.dataset.disposed || state.audioErrorReported) return;
+    state.audioErrorReported = true;
+    setPlaying(false);
+    toast('음원을 불러오지 못했습니다. 음원 URL 또는 스토리지 CORS 설정을 확인해주세요.');
+  });
+  state.audioTracks.set(clip.id, audio);
+  return audio;
+}
+
+/** 지금부터 곧 들릴 클립의 음원을 미리 만들어 재생 버튼을 누르기 전에 연결·버퍼링을 끝낸다. */
+function preloadAudio() {
+  if (!state.studio) return;
+  const until = state.time + PRELOAD_AHEAD_SECONDS;
+  for (const clip of allClips()) {
+    if (clip.audioUrl && clip.start < until && clip.start + clip.duration > state.time) ensureAudio(clip);
+  }
+}
+
+/** 음원이 아직 재생할 만큼 준비되지 않았으면 true. 에러가 난 음원은 기다리지 않는다. */
+function audioWaiting(audio) {
+  return !audio.error && !audio.ended
+    && (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA || state.audioPlayPending.has(audio));
+}
+
+/** 지금 들려야 할 음원 중 하나라도 버퍼링 중이면 재생 시계를 멈춰 둔다. */
+function waitingForAudio() {
+  return activeAudioClips().some((clip) => {
+    const audio = state.audioTracks.get(clip.id);
+    return audio && audioWaiting(audio);
+  });
+}
+
+function syncAudioTracks({ seeked = false } = {}) {
+  const active = activeAudioClips();
+  const activeIds = new Set(active.map((clip) => clip.id));
+
+  for (const [clipId, audio] of state.audioTracks) {
+    if (!state.playing || !activeIds.has(clipId)) audio.pause();
+  }
+  preloadAudio();
+  if (!state.playing) return;
+
+  for (const clip of active) {
+    const audio = ensureAudio(clip);
+    audio.volume = Math.max(0, Math.min(1, clip.volume ?? 1));
+    const position = Math.max(0, state.time - clip.start);
+    if (audio.readyState >= 1 && !state.audioPlayPending.has(audio)
+      && (seeked || Math.abs(audio.currentTime - position) > 0.7)) {
+      try { audio.currentTime = position; } catch { /* 메타데이터 로드를 기다린다. */ }
+    }
+    if (audio.paused && !audio.ended && !state.audioPlayPending.has(audio)) {
+      state.audioPlayPending.add(audio);
+      audio.play().catch((error) => {
+        // 탐색·일시정지로 재생 요청이 취소되는 AbortError는 정상 흐름이다.
+        if (error?.name === 'AbortError') return;
+        if (audio.dataset.disposed || state.audioErrorReported) return;
+        state.audioErrorReported = true;
+        setPlaying(false);
+        toast('음원을 재생하지 못했습니다. 재생 버튼을 다시 눌러주세요.');
+      }).finally(() => state.audioPlayPending.delete(audio));
+    }
+  }
+}
+
 let lastFrame;
+function unfinishedSpeechClip(nextTime) {
+  const clip = allClips().find((candidate) => candidate.kind !== 'sfx'
+    && candidate.audioUrl
+    && state.time >= candidate.start
+    && state.time < candidate.start + candidate.duration
+    && nextTime >= candidate.start + candidate.duration);
+  if (!clip) return null;
+  const audio = state.audioTracks.get(clip.id);
+  return audio && !audio.ended ? clip : null;
+}
+
 function tick(now) {
   if (!state.playing) return;
-  state.time = Math.min(state.studio.timeline.durationSeconds, state.time + (now - lastFrame) / 1000);
+  if (waitingForAudio()) {
+    // 음원이 준비될 때까지 시계를 세워 둬야 재생바와 소리가 어긋나지 않는다.
+    lastFrame = now;
+    syncAudioTracks();
+    requestAnimationFrame(tick);
+    return;
+  }
+  const end = state.stopAt ?? state.studio.timeline.durationSeconds;
+  const nextTime = Math.min(end, state.time + (now - lastFrame) / 1000);
+  const unfinished = unfinishedSpeechClip(nextTime);
+  state.time = unfinished ? unfinished.start + unfinished.duration - 0.001 : nextTime;
   lastFrame = now;
-  if (state.time >= state.studio.timeline.durationSeconds) state.playing = false;
+  if (state.time >= end) {
+    state.playing = false;
+    state.stopAt = null;
+    pauseAudioTracks();
+  }
   updatePlayback();
+  syncAudioTracks();
   if (state.playing) requestAnimationFrame(tick);
 }
 
-function setPlaying(playing) {
+/** stopAt을 주면 그 시각(초)에서 멈춘다. 개별 항목 재생에 쓴다. */
+function setPlaying(playing, { stopAt = null } = {}) {
+  if (playing && !allClips().some((clip) => clip.audioUrl)) {
+    toast('재생할 음원이 없습니다. TTS 생성 상태와 audio URL을 확인해주세요.');
+    return;
+  }
+  const wasPlaying = state.playing;
   state.playing = playing;
+  state.stopAt = playing ? stopAt : null;
   if (playing) {
     if (state.time >= state.studio.timeline.durationSeconds) state.time = 0;
     lastFrame = performance.now();
-    requestAnimationFrame(tick);
+    // 이미 재생 중이면 기존 루프가 이어 돈다. 루프를 하나 더 돌리면 두 배속이 된다.
+    if (!wasPlaying) requestAnimationFrame(tick);
   }
+  syncAudioTracks({ seeked: playing });
   updatePlayback();
 }
 
 function seek(seconds) {
   state.time = Math.max(0, Math.min(state.studio.timeline.durationSeconds, seconds));
+  syncAudioTracks({ seeked: true });
   updatePlayback();
 }
 
@@ -551,8 +807,19 @@ function bindEvents() {
     switch (trigger?.dataset.action) {
       case 'play': {
         const clip = allClips().find((c) => c.itemId === item.id);
-        if (clip) seek(clip.start);
-        setPlaying(true);
+        if (!clip) break;
+        if (!clip.audioUrl) {
+          toast('이 항목의 음원이 아직 준비되지 않았습니다. TTS를 생성한 뒤 다시 시도해주세요.');
+          break;
+        }
+        const end = clip.start + clip.duration;
+        // 같은 항목을 재생 중이면 일시정지, 아니면 그 항목 구간만 재생한다.
+        if (state.playing && state.stopAt === end) {
+          setPlaying(false);
+          break;
+        }
+        seek(clip.start);
+        setPlaying(true, { stopAt: end });
         break;
       }
       case 'edit-text': modals.openText(item); break;
@@ -565,14 +832,30 @@ function bindEvents() {
   });
 
   $('#batch-regenerate').addEventListener('click', () => modals.openBatch());
+  $('#add-dialogue').addEventListener('click', () => modals.openDialogue());
+  $('#manage-speakers').addEventListener('click', () => modals.openSpeakerNames());
 
   $('#item-list').addEventListener('change', (event) => {
-    const select = event.target.closest('[data-field="kind"]');
+    const field = event.target.closest('[data-field]');
     const item = event.target.closest('[data-item-id]');
-    if (!select || !item) return;
-    const [kind, characterId] = select.value.split(':');
+    if (!field || !item) return;
+    if (field.dataset.field === 'speaker') {
+      void changeSpeakerName(field, item.dataset.itemId);
+      return;
+    }
+    const [kind, characterId] = field.value.split(':');
     // 대사가 아닌 종류로 바꾸면 화자를 비운다.
-    void changeLine(item.dataset.itemId, { kind, character_id: characterId ?? null });
+    void changeLine(item.dataset.itemId, { kind, character_id: characterId || null });
+  });
+
+  $('#item-list').addEventListener('keydown', (event) => {
+    const input = event.target.closest('[data-field="speaker"]');
+    if (input && event.key === 'Enter') {
+      event.preventDefault();
+      const item = input.closest('[data-item-id]');
+      if (item) void changeSpeakerName(input, item.dataset.itemId);
+      input.blur();
+    }
   });
 
   $('#manuscript').addEventListener('click', (event) => {
@@ -679,6 +962,7 @@ async function init() {
     return;
   }
   await selectScene(scenes.some((s) => s.id === requested) ? requested : first.id);
+  preloadAudio();
   $('#workspace').setAttribute('aria-busy', 'false');
 }
 
