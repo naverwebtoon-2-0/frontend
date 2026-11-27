@@ -406,13 +406,16 @@ body.studio {
 
 .inspector__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   font-weight: 700;
 }
 
 .inspector__heading .heading {
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .inspector__heading .text-small {
