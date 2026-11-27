@@ -657,7 +657,10 @@ function adaptStudio({ studio: raw, episode, series, voices, presets }) {
     },
     scenes,
     sceneDetails,
-    speakers: studio.characters.filter((c) => c.kind !== 'narration').map((c) => ({ id: c.id, name: c.name })),
+    // 화자 선택·필터에는 이번 회차에 대사가 있는 인물만 보인다. 전체 인물은 characters에 있다.
+    speakers: studio.characters
+      .filter((c) => c.kind !== 'narration' && studio.lines.some((l) => l.character_id === c.id && l.kind !== 'ignore'))
+      .map((c) => ({ id: c.id, name: c.name })),
     characters: studio.characters.map((c) => ({
       id: c.id,
       memberIds: c.member_ids ?? [c.id],

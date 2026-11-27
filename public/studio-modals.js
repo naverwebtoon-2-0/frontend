@@ -93,7 +93,7 @@ export function setupModals(ctx) {
   });
 
   function openDialogue() {
-    const speakers = state.studio?.characters.filter((character) => character.kind !== 'narration') ?? [];
+    const speakers = state.studio?.speakers ?? [];
     if (!state.sceneId) {
       toast('먼저 장면을 선택해주세요.');
       return;

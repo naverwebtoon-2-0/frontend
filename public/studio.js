@@ -221,17 +221,6 @@ function applyPreviewZoom() {
 
 // ── 장면 편집 ─────────────────────────────────────────
 
-/** 대사 종류·화자 선택지. 값은 명세의 kind와 character_id */
-function lineKindOptions() {
-  return [
-    ['narration', LINE_KIND_LABEL.narration],
-    ['dialogue:', '화자 미지정 · 대사'],
-    ...state.speakers.map((s) => [`dialogue:${s.id}`, `${s.name} · 대사`]),
-    ['sfx_text', LINE_KIND_LABEL.sfx_text],
-    ['ignore', LINE_KIND_LABEL.ignore],
-  ];
-}
-
 function itemActions(item) {
   if (item.editable === 'cue') {
     return [
@@ -290,9 +279,10 @@ function renderItem(item) {
 
   const kind = li.querySelector('[data-field="kind"]');
   if (item.editable === 'line') {
+    // 드롭다운에서는 종류만 고른다. 화자는 대사로 바꾼 뒤 옆의 이름 입력칸에서 지정한다.
+    for (const [value, label] of DIALOGUE_TYPE_OPTIONS) kind.append(new Option(label, value));
+    kind.value = item.kind;
     if (item.kind === 'dialogue') {
-      for (const [value, label] of DIALOGUE_TYPE_OPTIONS) kind.append(new Option(label, value));
-      kind.value = 'dialogue';
       const speaker = state.speakers.find((candidate) => candidate.id === item.speakerId);
       const input = document.createElement('input');
       input.className = 'speaker-name-input';
@@ -305,9 +295,6 @@ function renderItem(item) {
       input.setAttribute('list', 'studio-speaker-options');
       input.setAttribute('aria-label', '화자 이름');
       kind.closest('.pill-select').insertAdjacentElement('afterend', input);
-    } else {
-      for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
-      kind.value = item.kind;
     }
   } else {
     kind.append(new Option(TYPE_LABEL[item.type], item.type));
@@ -858,9 +845,8 @@ function bindEvents() {
       void changeSpeakerName(field, item.dataset.itemId);
       return;
     }
-    const [kind, characterId] = field.value.split(':');
-    // 대사가 아닌 종류로 바꾸면 화자를 비운다.
-    void changeLine(item.dataset.itemId, { kind, character_id: characterId || null });
+    // 종류를 바꾸면 화자를 비운다.
+    void changeLine(item.dataset.itemId, { kind: field.value, character_id: null });
   });
 
   $('#item-list').addEventListener('keydown', (event) => {
