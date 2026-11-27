@@ -8,6 +8,9 @@ import {
   characterNameKey,
   createCharacter,
   createDialogueLine,
+  createSfxCue,
+  deleteLeftoverCharacter,
+  deleteSfxCue,
   regenerateLine,
   regenerateLines,
   regenerateStale,
@@ -126,32 +129,47 @@ export function setupModals(ctx) {
     let renamed = 0;
     let mergedLines = 0;
     const tasks = [];
-    for (const entries of groups.values()) {
-      const lead = entries.find((entry) => !entry.renamed) ?? entries[0];
-      if (lead.renamed) {
+    const merged = []; // 대사를 옮긴 뒤 정리할 이전 인물
+    const listedIds = new Set(inputs.map((input) => input.dataset.characterId));
+    for (const [key, entries] of groups) {
+      // 목록에서 숨긴 인물 중 같은 이름에 목소리가 있는 인물이 있으면 그 인물로 합친다.
+      // 이름만 바꾸면 화면에 보이는 목소리와 대사에 연결된 인물의 목소리가 달라질 수 있다.
+      const hidden = state.studio.characters.find((c) => (
+        c.kind !== 'narration' && !listedIds.has(c.id) && c.voiceId && characterNameKey(c.name) === key
+      ));
+      const lead = hidden ? null : entries.find((entry) => !entry.renamed) ?? entries[0];
+      if (lead?.renamed) {
         renamed += 1;
         tasks.push(renameCharacterGroup(lead.character, lead.name));
       }
       for (const entry of entries.filter((candidate) => candidate !== lead)) {
-        const lineIds = state.studio.scenes.flatMap((scene) => (
-          state.studio.sceneDetails[scene.id].items
-            .filter((item) => item.editable === 'line' && item.speakerId === entry.character.id)
-            .map((item) => item.id)
-        ));
+        const lineIds = linesOf(entry.character.id).map((item) => item.id);
         mergedLines += lineIds.length;
-        tasks.push(reassignLines(lineIds, lead.character.id));
+        tasks.push(reassignLines(lineIds, (hidden ?? lead.character).id));
+        // 제외한 대사는 옮기지 않으므로, 그런 대사가 남은 인물은 지워지지 않는다.
+        merged.push({ character: entry.character, lineIds });
       }
     }
     if (!tasks.length) return '';
     await Promise.all(tasks);
+    await Promise.all(merged.map(({ character, lineIds }) => deleteLeftoverCharacter(state.studio, character, lineIds)));
     const messages = [];
     if (renamed) messages.push(`${renamed}명의 인물 이름을 저장했습니다.`);
     if (mergedLines) messages.push(`같은 이름의 인물을 합치고 대사 ${mergedLines}개의 화자를 옮겼습니다.`);
     return messages.join(' ');
   });
 
+  /** 이번 회차에서 이 인물이 화자인 대사. 제외(ignore)한 대사는 빼고 센다. */
+  function linesOf(characterId) {
+    return state.studio.scenes.flatMap((scene) => state.studio.sceneDetails[scene.id].items
+      .filter((item) => item.editable === 'line' && item.kind !== 'ignore' && item.speakerId === characterId));
+  }
+
   function openSpeakerNames() {
-    const speakers = state.studio.characters.filter((character) => character.kind !== 'narration');
+    // 화자를 바꾸거나 합쳐 대사가 남지 않은 인물은 목록에 보이지 않는다.
+    const speakers = state.studio.characters.filter((character) => (
+      character.kind !== 'narration' && linesOf(character.id).length > 0
+    ));
     if (!speakers.length) {
       toast('수정할 인물이 없습니다.');
       return;
@@ -255,7 +273,7 @@ export function setupModals(ctx) {
     fillSlots(voiceModal, {
       'voice-modal-sub': `${sceneName(state.scene.number)} · ${isNarrator ? '나레이션' : `${character.name} 대사`}`,
       'voice-modal-label': isNarrator ? '나레이터' : '화자',
-      'voice-current': '현재 음성',
+      'voice-current': character.voiceId ? '현재 음성' : '음성 미지정 · 적용 전',
     });
     const select = voiceModal.querySelector('[name="voice"]');
     select.replaceChildren(...state.studio.voices.map((v) => new Option(`${character.name} · ${v.name}`, v.id, false, v.id === character.voiceId)));
@@ -278,19 +296,62 @@ export function setupModals(ctx) {
   bindSubmit(sfxModal, async (form) => {
     const tag = form.elements.preset.value;
     const volume = Number(form.elements.volume.value);
+    if (!sfxTarget) {
+      await createSfxCue(episodeId, {
+        imageId: state.sceneId,
+        yRatio: Number(form.elements.position.value),
+        tag,
+        volume,
+      });
+      return '효과음을 추가했습니다.';
+    }
     if (tag === sfxTarget.sfx.tag && volume === sfxTarget.sfx.volume) return '';
     await updateSfxCue(sfxTarget.id, { tag, volume });
     return '효과음을 바꿨습니다.';
   });
 
+  /** item이 없으면 현재 장면에 효과음을 추가하고, 있으면 그 효과음을 바꾼다. */
   function openSfx(item, { focusVolume = false } = {}) {
     sfxTarget = item;
-    fillSlots(sfxModal, { 'sfx-modal-sub': `${sceneName(state.scene.number)} · ${item.number}번 효과음` });
+    fillSlots(sfxModal, {
+      'sfx-modal-title': item ? '효과음 설정' : '효과음 추가',
+      'sfx-modal-sub': item ? `${sceneName(state.scene.number)} · ${item.number}번 효과음` : `${sceneName(state.scene.number)}에 효과음을 추가합니다.`,
+      'sfx-submit': item ? '적용하기' : '추가하기',
+    });
     const select = sfxModal.querySelector('[name="preset"]');
-    select.replaceChildren(...state.studio.presets.map((p) => new Option(p.name, p.tag, false, p.tag === item.sfx.tag)));
-    volumeInput.value = item.sfx.volume;
+    select.replaceChildren(...state.studio.presets.map((p) => new Option(p.name, p.tag, false, p.tag === item?.sfx.tag)));
+    // 위치는 추가할 때만 고른다. 효과음은 고른 대사와 함께 시작한다.
+    sfxModal.querySelector('#sfx-position').hidden = Boolean(item);
+    sfxModal.querySelector('[name="position"]').replaceChildren(
+      new Option('장면 시작', '0'),
+      ...state.scene.items
+        .filter((line) => line.editable === 'line' && line.kind !== 'ignore' && line.bbox)
+        .map((line) => new Option(`${line.number}번 “${line.text.slice(0, 20)}” 위치`, String(line.bbox.y))),
+    );
+    volumeInput.value = item ? item.sfx.volume : 60;
     showVolume();
-    open(sfxModal, focusVolume ? '[name="volume"]' : 'select');
+    open(sfxModal, focusVolume ? '[name="volume"]' : '[name="preset"]');
+  }
+
+  function openAddSfx() {
+    if (!state.sceneId || !state.studio?.presets.length) {
+      toast(state.sceneId ? '사용할 수 있는 효과음이 없습니다.' : '먼저 장면을 선택해주세요.');
+      return;
+    }
+    openSfx(null);
+  }
+
+  async function removeSfx(item, trigger) {
+    if (!window.confirm(`‘${item.sfx.preset}’ 효과음을 삭제할까요?`)) return;
+    if (trigger) trigger.disabled = true;
+    try {
+      await deleteSfxCue(item.id);
+      await reload();
+      toast('효과음을 삭제했습니다.');
+    } catch (err) {
+      toast(err.message || '효과음을 삭제하지 못했습니다.');
+      if (trigger) trigger.disabled = false;
+    }
   }
 
   // ── 일괄 재생성 ───────────────────────────────────────
@@ -424,5 +485,5 @@ export function setupModals(ctx) {
   });
   document.addEventListener('scroll', () => closeMenu(), true);
 
-  return { openDialogue, openSpeakerNames, openText, openVoice, openSfx, openBatch, openMenu, regenerate, staleItems };
+  return { openDialogue, openSpeakerNames, openText, openVoice, openSfx, openAddSfx, removeSfx, openBatch, openMenu, regenerate, staleItems };
 }

@@ -721,6 +721,23 @@ export async function reassignLines(lineIds, characterId) {
   await Promise.all(lineIds.map((lineId) => updateLine(lineId, { character_id: characterId })));
 }
 
+/**
+ * 화자를 옮기거나 비운 뒤, 대사가 남지 않은 이전 인물을 지운다. DELETE /v1/characters/{id}
+ * studio는 옮기기 전의 스튜디오 데이터다. 이번 회차에 대사가 남으면 요청하지 않는다.
+ * 다른 회차에서 쓰는 인물은 서버가 거절(409)한다. 정리에 실패해도 화자 변경은 유지한다.
+ */
+export async function deleteLeftoverCharacter(studio, character, movedLineIds) {
+  if (!character || character.kind === 'narration') return;
+  const moved = new Set(movedLineIds);
+  const stillUsed = Object.values(studio.sceneDetails).some((scene) => scene.items.some((item) => (
+    item.editable === 'line' && item.speakerId === character.id && !moved.has(item.id)
+  )));
+  if (stillUsed) return;
+  await Promise.allSettled((character.memberIds ?? [character.id]).map((id) => (
+    request(`/v1/characters/${enc(id)}`, { method: 'DELETE' })
+  )));
+}
+
 /** 묶인 인물(memberIds) 모두에 같은 이름을 적용한다. */
 export async function renameCharacterGroup(character, name) {
   await Promise.all((character.memberIds ?? [character.id]).map((id) => updateCharacterName(id, name)));
@@ -793,6 +810,20 @@ export async function updateCharacterVoice(characterId, { voiceId, voiceParams }
 /** 효과음 큐 수정. PATCH /v1/sfx-cues/{id} (volume 0~1) */
 export async function updateSfxCue(cueId, { tag, volume }) {
   return request(`/v1/sfx-cues/${enc(cueId)}`, { method: 'PATCH', body: { sfx_tag: tag, volume: volume / 100 } });
+}
+
+/** 효과음 큐 추가. POST /v1/episodes/{id}/sfx-cues (volume 0~1) */
+export async function createSfxCue(episodeId, { imageId, yRatio, tag, volume }) {
+  return request(`/v1/episodes/${enc(episodeId)}/sfx-cues`, {
+    method: 'POST',
+    body: { image_id: imageId, y_ratio: yRatio, sfx_tag: tag, volume: volume / 100 },
+    idempotent: true,
+  });
+}
+
+/** 효과음 큐 삭제. DELETE /v1/sfx-cues/{id} */
+export async function deleteSfxCue(cueId) {
+  return request(`/v1/sfx-cues/${enc(cueId)}`, { method: 'DELETE' });
 }
 
 /** 대사 하나 재생성. POST /v1/lines/{id}/regenerate → 200 { audio } 또는 202 { job } */
