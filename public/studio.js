@@ -26,11 +26,10 @@ const SCENE_STATUS = {
 };
 const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음', ignore: '읽지 않음' };
 const SOURCE_LABEL = { manuscript: '원고 텍스트', drawn: '그려진 글자', alt: '이미지 설명', preset: '효과음 프리셋' };
-const LINE_KIND_LABEL = { narration: '원문 나레이션', sfx_text: '효과음 글자', ignore: '읽지 않음' };
+const LINE_KIND_LABEL = { narration: '원문 나레이션', ignore: '읽지 않음' };
 const DIALOGUE_TYPE_OPTIONS = [
   ['dialogue', '대사'],
   ['narration', LINE_KIND_LABEL.narration],
-  ['sfx_text', LINE_KIND_LABEL.sfx_text],
   ['ignore', LINE_KIND_LABEL.ignore],
 ];
 // 어두운 스튜디오 화면에서 서로 충분히 구분되는 화자 색상.

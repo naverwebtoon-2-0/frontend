@@ -198,12 +198,12 @@ function buildPlayback(episodeId) {
   const presets = new Map(db.sfxPresets.map((p) => [p.tag, p.name]));
   const cues = [];
   for (const image of images) {
-    for (const l of db.lines.filter((it) => it.image_id === image.id && it.kind !== 'ignore')) {
+    for (const l of db.lines.filter((it) => it.image_id === image.id && !['ignore', 'sfx_text'].includes(it.kind))) {
       cues.push({
         id: `cu_${l.id}`,
         image_index: image.index,
         y_ratio: l.bbox?.y ?? 0,
-        kind: l.kind === 'sfx_text' ? 'sfx' : l.kind,
+        kind: l.kind,
         text: l.text,
         speaker: l.kind === 'dialogue' ? characters.get(l.character_id)?.name ?? null : null,
         audio_url: null,
@@ -314,7 +314,8 @@ const routes = [
       .map((episode) => {
         const images = imagesOf(episode.id);
         const imageIds = new Set(images.map((image) => image.id));
-        const issueCount = db.lines.filter((line) => imageIds.has(line.image_id) && ['stale', 'failed'].includes(line.audio?.status)).length;
+        const issueCount = db.lines.filter((line) => imageIds.has(line.image_id) && !['ignore', 'sfx_text'].includes(line.kind)
+          && ['stale', 'failed'].includes(line.audio?.status)).length;
         const reviewedCount = images.filter((image) => image.reviewed).length;
         const processing = ['analyzing', 'synthesizing'].includes(episode.state)
           ? { job_id: null, step: episode.state === 'analyzing' ? 'structure' : 'dubbing', progress: null, eta_seconds: 95 }
@@ -555,7 +556,7 @@ const routes = [
       throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '현재 상태에서는 게시할 수 없습니다.', { state: episode.state });
     }
     const ids = new Set(imagesOf(id).map((img) => img.id));
-    const stale = db.lines.filter((l) => ids.has(l.image_id) && l.kind !== 'ignore' && l.audio.status !== 'ready');
+    const stale = db.lines.filter((l) => ids.has(l.image_id) && !['ignore', 'sfx_text'].includes(l.kind) && l.audio.status !== 'ready');
     if (stale.length) {
       throw new MockHttpError(409, 'EPISODE_STATE_INVALID', '다시 만들어야 하는 음성이 남아 있습니다.', { stale_line_ids: stale.map((l) => l.id) });
     }

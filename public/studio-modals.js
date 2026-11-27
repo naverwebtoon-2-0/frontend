@@ -325,7 +325,7 @@ export function setupModals(ctx) {
     sfxModal.querySelector('[name="position"]').replaceChildren(
       new Option('장면 시작', '0'),
       ...state.scene.items
-        .filter((line) => line.editable === 'line' && line.kind !== 'ignore' && line.bbox)
+        .filter((line) => line.editable === 'line' && (line.kind !== 'ignore' || line.source === 'drawn') && line.bbox)
         .map((line) => new Option(`${line.number}번 “${line.text.slice(0, 20)}” 위치`, String(line.bbox.y))),
     );
     volumeInput.value = item ? item.sfx.volume : 60;
