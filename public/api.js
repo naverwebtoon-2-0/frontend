@@ -454,18 +454,19 @@ function truncate(text, max = 9) {
 /** OCR이 이름을 비워 둔 인물에는 중복되지 않는 기본 이름을 붙인다. */
 function withDefaultCharacterNames(characters) {
   const usedNames = new Set(characters.map((character) => character.name?.trim()).filter(Boolean));
-  let nextNumber = 1;
+  let characterNumber = 0;
   return characters.map((character) => {
     const currentName = character.name?.trim();
-    if (currentName) return { ...character, name: currentName, auto_named: false };
     if (character.kind === 'narration') {
+      if (currentName) return { ...character, name: currentName, auto_named: false };
       usedNames.add('나레이션');
       return { ...character, name: '나레이션', auto_named: true };
     }
-    while (usedNames.has(`인물 ${nextNumber}`)) nextNumber += 1;
-    const name = `인물 ${nextNumber}`;
+    characterNumber += 1;
+    if (currentName) return { ...character, name: currentName, auto_named: false };
+    while (usedNames.has(`인물 ${characterNumber}`)) characterNumber += 1;
+    const name = `인물 ${characterNumber}`;
     usedNames.add(name);
-    nextNumber += 1;
     return { ...character, name, auto_named: true };
   });
 }
@@ -588,7 +589,15 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
   });
 
   return {
-    episode: { id: episode.id, number: episode.number, title: episode.title, workTitle: series.title, state: episode.state, language: series.language ?? 'ko' },
+    episode: {
+      id: episode.id,
+      seriesId: episode.series_id,
+      number: episode.number,
+      title: episode.title,
+      workTitle: series.title,
+      state: episode.state,
+      language: series.language ?? 'ko',
+    },
     lastSavedAt: episode.updated_at,
     review: {
       reviewedCount: scenes.filter((s) => s.status === 'done').length,
@@ -605,6 +614,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
       voiceId: c.voice_id,
       voiceName: voiceName.get(c.voice_id) ?? c.voice_id,
       speed: c.voice_params?.speed ?? 0,
+      voiceParams: c.voice_params ?? { speed: 0, pitch: 0 },
     })),
     voices: voices.map((v) => ({ id: v.id, name: v.name, sampleUrl: v.sample_url ?? null })),
     presets: presets.map((p) => ({ tag: p.tag, name: p.name, sampleUrl: p.sample_url ?? null })),
@@ -626,11 +636,6 @@ export async function getStudio(episodeId) {
   ]);
   const series = await request(`/v1/series/${enc(episode.series_id)}`);
   const characters = withDefaultCharacterNames(studio.characters);
-  const autoNamed = characters.filter((character) => character.auto_named);
-  if (autoNamed.length) {
-    // 자동 이름 저장에 실패해도 스튜디오는 기본 이름으로 계속 사용할 수 있다.
-    await Promise.all(autoNamed.map((character) => updateCharacterName(character.id, character.name))).catch(() => null);
-  }
   const view = adaptStudio({
     studio: { ...studio, characters },
     episode,
@@ -668,6 +673,20 @@ export async function createDialogueLine(episodeId, { imageId, text, characterId
       kind: 'dialogue',
       character_id: characterId,
       emotion: 'neutral',
+    },
+    idempotent: true,
+  });
+}
+
+/** 작품에 새 인물을 추가한다. POST /v1/series/{id}/characters */
+export async function createCharacter(seriesId, name, { voiceId, voiceParams } = {}) {
+  return request(`/v1/series/${enc(seriesId)}/characters`, {
+    method: 'POST',
+    body: {
+      name,
+      kind: 'character',
+      ...(voiceId ? { voice_id: voiceId } : {}),
+      ...(voiceParams ? { voice_params: voiceParams } : {}),
     },
     idempotent: true,
   });

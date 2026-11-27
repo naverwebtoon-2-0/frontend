@@ -5,6 +5,7 @@
 // - 일괄 재생성 확인(stale 대사)
 // - ⋯ 메뉴(음성 설정 · 원문으로 되돌리기). TTS 재생성은 수정된 대사 카드의 버튼으로만 한다.
 import {
+  createCharacter,
   createDialogueLine,
   regenerateLine,
   regenerateStale,
@@ -70,13 +71,17 @@ export function setupModals(ctx) {
 
   const dialogueModal = $('#dialogue-modal');
   bindSubmit(dialogueModal, async (form) => {
-    const characterId = form.elements.character.value || null;
+    const characterName = form.elements.character.value.trim();
     const text = form.elements.dialogue.value.trim();
+    if (!characterName) throw new Error('화자 이름을 입력해주세요.');
     if (!text) throw new Error('말풍선 텍스트를 입력해주세요.');
+    const speakers = state.studio.characters.filter((character) => character.kind !== 'narration');
+    const existing = speakers.find((speaker) => speaker.name.localeCompare(characterName, 'ko', { sensitivity: 'base' }) === 0);
+    const character = existing ?? await createCharacter(state.studio.episode.seriesId, characterName);
     await createDialogueLine(episodeId, {
       imageId: state.sceneId,
       text,
-      characterId,
+      characterId: character.id,
     });
     return '말풍선 대사를 추가했습니다. 음성을 생성해주세요.';
   });
@@ -88,11 +93,9 @@ export function setupModals(ctx) {
       return;
     }
     fillSlots(dialogueModal, { 'dialogue-modal-sub': `${sceneName(state.scene.number)}에 새 대사를 추가합니다.` });
-    const select = dialogueModal.querySelector('[name="character"]');
-    select.replaceChildren(
-      new Option('화자 미지정', '', true, true),
-      ...speakers.map((speaker) => new Option(speaker.name, speaker.id)),
-    );
+    const options = dialogueModal.querySelector('#dialogue-character-options');
+    options.replaceChildren(...speakers.map((speaker) => Object.assign(document.createElement('option'), { value: speaker.name })));
+    dialogueModal.querySelector('[name="character"]').value = '';
     dialogueModal.querySelector('[name="dialogue"]').value = '';
     open(dialogueModal, '[name="character"]');
   }

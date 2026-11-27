@@ -167,15 +167,17 @@
       </div>
       <hr class="modal__divider">
       <label class="modal__field">
-        <span class="modal__label">화자 <span class="text-small">선택</span></span>
-        <select class="modal__select" name="character"></select>
+        <span class="modal__label">화자 이름</span>
+        <input class="modal__input" name="character" type="text" list="dialogue-character-options"
+               maxlength="100" autocomplete="off" placeholder="예: 인물 1 또는 서윤" required>
+        <datalist id="dialogue-character-options"></datalist>
       </label>
       <label class="modal__field">
         <span class="modal__label">말풍선 텍스트</span>
         <textarea class="modal__textarea" name="dialogue" rows="4" maxlength="2000"
                   placeholder="분리해서 추가할 말풍선의 텍스트를 입력하세요." required></textarea>
       </label>
-      <p class="modal__note">화자는 나중에 지정할 수 있습니다. 추가한 대사는 음성을 생성한 뒤 검수를 완료할 수 있습니다.</p>
+      <p class="modal__note">새 이름을 입력하면 작품 인물로 자동 등록됩니다. 추가한 대사는 음성을 생성한 뒤 검수를 완료할 수 있습니다.</p>
       <p class="modal__error" role="alert" tabindex="-1" hidden></p>
       <div class="modal__actions">
         <button class="modal__button" type="button" data-close>취소</button>
@@ -293,6 +295,7 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <datalist id="studio-speaker-options"></datalist>
 
   <template id="scene-card">
     <li>

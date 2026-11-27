@@ -359,6 +359,21 @@ const routes = [
     db.episodes.push(episode);
     return episode;
   }],
+  ['POST', /^\/v1\/series\/([^/]+)\/characters$/, ([seriesId], body) => {
+    if (!db.series.some((series) => series.id === seriesId)) notFound();
+    const name = body.name?.trim();
+    if (!name) throw new MockHttpError(422, 'VALIDATION_ERROR', '인물 이름을 입력해주세요.', null);
+    const character = {
+      id: newId('ch'),
+      series_id: seriesId,
+      name,
+      kind: body.kind ?? 'character',
+      voice_id: body.voice_id ?? null,
+      voice_params: body.voice_params ?? { speed: 0, pitch: 0 },
+    };
+    db.characters.push(character);
+    return character;
+  }],
 
   ['GET', /^\/v1\/episodes\/([^/]+)$/, ([id]) => episodeOf(id)],
   ['PATCH', /^\/v1\/episodes\/([^/]+)$/, ([id], body) => Object.assign(episodeOf(id), body, { updated_at: new Date().toISOString() })],
@@ -600,7 +615,8 @@ export function handle(method, path, body) {
         persist();
         const status = method === 'DELETE'
           ? 204
-          : method === 'POST' && /^\/v1\/episodes\/[^/]+\/lines$/.test(pathname)
+          : method === 'POST' && (/^\/v1\/episodes\/[^/]+\/lines$/.test(pathname)
+            || /^\/v1\/series\/[^/]+\/characters$/.test(pathname))
             ? 201
             : method === 'POST' && /\/(process|episodes\/[^/]+\/regenerate)$/.test(pathname) ? 202 : 200;
         return { status, body: result };

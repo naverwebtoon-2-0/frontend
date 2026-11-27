@@ -1,6 +1,13 @@
 // A4 제작 스튜디오: 장면 목록 · 원고 미리보기 · 장면 편집 · 오디오 타임라인
 // 데이터는 api.js의 getStudio()가 명세 §6 응답을 바꿔 준다. 장면 = 원고 이미지 한 장.
-import { completeSceneReview, getScene, getStudio, updateLine } from './api.js';
+import {
+  completeSceneReview,
+  createCharacter,
+  getScene,
+  getStudio,
+  updateCharacterName,
+  updateLine,
+} from './api.js';
 import { fillSlots, formatDuration, setProgress } from './common.js';
 import { setupModals } from './studio-modals.js';
 
@@ -17,6 +24,9 @@ const SCENE_STATUS = {
 const TYPE_LABEL = { narration: '원문 나레이션', description: '화면해설', dialogue: '대사', sfx: '효과음', ignore: '읽지 않음' };
 const SOURCE_LABEL = { manuscript: '원고 텍스트', drawn: '그려진 글자', alt: '이미지 설명', preset: '효과음 프리셋' };
 const LINE_KIND_LABEL = { narration: '원문 나레이션', sfx_text: '효과음 글자', ignore: '읽지 않음' };
+// 어두운 스튜디오 화면에서 서로 충분히 구분되는 화자 색상.
+// 동일 인물이 여러 character ID로 감지돼도 이름이 같으면 같은 색을 사용한다.
+const SPEAKER_COLORS = ['#f2a65a', '#5c8dff', '#f472b6', '#4fd1c5', '#c084fc', '#facc15', '#fb7185', '#a3e635'];
 const TABS = [
   { key: 'all', label: '전체', types: ['narration', 'description', 'dialogue', 'sfx', 'ignore'] },
   { key: 'text', label: '텍스트', types: ['narration', 'dialogue'] },
@@ -93,6 +103,23 @@ function itemText(item) {
   return item.text;
 }
 
+function speakerColor(speakerId) {
+  const speaker = state.speakers.find((candidate) => candidate.id === speakerId);
+  if (!speaker) return SPEAKER_COLORS[0];
+  const normalizedName = speaker.name.trim().toLocaleLowerCase('ko-KR');
+  const names = [...new Set(state.speakers.map((candidate) => candidate.name.trim().toLocaleLowerCase('ko-KR')))];
+  const index = names.indexOf(normalizedName);
+  return SPEAKER_COLORS[(index < 0 ? 0 : index) % SPEAKER_COLORS.length];
+}
+
+function applySpeakerColor(element, item) {
+  if (item?.type === 'dialogue') element.style.setProperty('--track', speakerColor(item.speakerId));
+}
+
+function isProvisionalSpeaker(speaker) {
+  return Boolean(speaker?.autoNamed) || /^인물\s*\d+$/.test(speaker?.name?.trim() ?? '');
+}
+
 // ── 헤더 ─────────────────────────────────────────────
 
 function renderHeader() {
@@ -153,6 +180,7 @@ function renderPreview() {
     marker.className = item.editable === 'cue' ? 'ocr-marker ocr-marker--cue' : 'ocr-marker';
     marker.dataset.type = item.type;
     marker.dataset.itemId = item.id;
+    applySpeakerColor(marker, item);
     marker.setAttribute('aria-label', `${item.number}번 ${itemLabel(item)}: ${itemText(item)}`);
     if (item.id === state.itemId) marker.setAttribute('aria-current', 'true');
     Object.assign(marker.style, {
@@ -231,6 +259,7 @@ function renderItem(item) {
   const li = clone('editor-item');
   li.dataset.type = item.type;
   li.dataset.itemId = item.id;
+  applySpeakerColor(li, item);
   if (item.id === state.itemId) li.setAttribute('aria-current', 'true');
 
   fillSlots(li, {
@@ -242,8 +271,25 @@ function renderItem(item) {
 
   const kind = li.querySelector('[data-field="kind"]');
   if (item.editable === 'line') {
-    for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
-    kind.value = item.kind === 'dialogue' ? `dialogue:${item.speakerId ?? ''}` : item.kind;
+    if (item.kind === 'dialogue') {
+      const speaker = state.speakers.find((candidate) => candidate.id === item.speakerId);
+      const input = document.createElement('input');
+      input.className = 'speaker-name-input';
+      input.type = 'text';
+      input.maxLength = 100;
+      input.autocomplete = 'off';
+      input.placeholder = '인물명 입력';
+      input.value = speaker?.name ?? '';
+      input.dataset.field = 'speaker';
+      input.setAttribute('list', 'studio-speaker-options');
+      input.setAttribute('aria-label', '화자 이름');
+      const field = kind.closest('.pill-select');
+      field.classList.add('pill-select--input');
+      field.replaceChildren(input);
+    } else {
+      for (const [value, label] of lineKindOptions()) kind.append(new Option(label, value));
+      kind.value = item.kind;
+    }
   } else {
     kind.append(new Option(TYPE_LABEL[item.type], item.type));
     kind.disabled = true;
@@ -257,6 +303,9 @@ function renderItem(item) {
 function renderInspector() {
   const { scene } = state;
   fillSlots(document, { 'inspector-title': `${sceneName(scene.number)} 편집` });
+  $('#studio-speaker-options').replaceChildren(...state.speakers.map((speaker) => (
+    Object.assign(document.createElement('option'), { value: speaker.name })
+  )));
 
   $('#item-tabs').replaceChildren(...TABS.map((tab) => {
     const count = scene.items.filter((item) => tab.types.includes(item.type)).length;
@@ -285,6 +334,10 @@ function renderInspector() {
         'data-sub-filter': key,
         'aria-pressed': String(state.subFilter === key),
       });
+      if (key !== 'narration') {
+        chip.classList.add('sub-pill--speaker');
+        chip.style.setProperty('--speaker-color', speakerColor(key));
+      }
       chip.disabled = count === 0;
       return chip;
     });
@@ -374,6 +427,54 @@ async function changeLine(lineId, patch) {
   }
 }
 
+async function changeSpeakerName(field, itemId) {
+  if (field.dataset.saving === 'true') return;
+  const name = field.value.trim();
+  if (!name) {
+    field.setCustomValidity('인물명을 입력해주세요.');
+    field.reportValidity();
+    return;
+  }
+  field.setCustomValidity('');
+  const item = currentItem(itemId);
+  const currentSpeaker = state.studio.characters.find((character) => character.id === item?.speakerId);
+  if (currentSpeaker?.name.localeCompare(name, 'ko', { sensitivity: 'base' }) === 0) return;
+
+  field.dataset.saving = 'true';
+  field.disabled = true;
+  try {
+    if (currentSpeaker && isProvisionalSpeaker(currentSpeaker)) {
+      // 아직 이름을 확정하지 않은 동일 화자 ID의 대사에만 이름을 일괄 적용한다.
+      const affectedLines = state.studio.scenes.reduce((count, scene) => (
+        count + state.studio.sceneDetails[scene.id].items.filter((candidate) => (
+          candidate.type === 'dialogue' && candidate.speakerId === currentSpeaker.id
+        )).length
+      ), 0);
+      await updateCharacterName(currentSpeaker.id, name);
+      await reloadStudio();
+      toast(`같은 인물로 인식된 대사 ${affectedLines}개에 ‘${name}’ 이름을 적용했습니다.`);
+      return;
+    }
+    const existing = state.studio.characters.find((character) => (
+      character.kind !== 'narration'
+      && character.name.localeCompare(name, 'ko', { sensitivity: 'base' }) === 0
+    ));
+    const character = existing ?? await createCharacter(state.studio.episode.seriesId, name, {
+      voiceId: currentSpeaker?.voiceId,
+      voiceParams: currentSpeaker?.voiceParams,
+    });
+    await updateLine(itemId, { kind: 'dialogue', character_id: character.id });
+    await reloadStudio();
+    toast(`이 대사의 인물명만 ‘${name}’ 이름으로 변경했습니다.`);
+  } catch (error) {
+    toast(error.message || '화자를 저장하지 못했습니다.');
+    renderInspector();
+  } finally {
+    field.dataset.saving = 'false';
+    if (field.isConnected) field.disabled = false;
+  }
+}
+
 // ── 타임라인 ─────────────────────────────────────────
 
 const percent = (seconds) => `${(seconds / state.window) * 100}%`;
@@ -415,6 +516,8 @@ function renderTimeline() {
       el.dataset.clipId = clip.id;
       el.dataset.start = clip.start;
       if (clip.itemId) el.dataset.clipItem = clip.itemId;
+      const clipItem = clip.itemId ? itemContext(clip.itemId)?.item : null;
+      applySpeakerColor(el, clipItem);
       el.style.left = percent(clip.start);
       el.style.width = percent(clip.duration);
       el.setAttribute('aria-label', `${clip.label}, ${formatDuration(clip.start)}부터`);
@@ -586,12 +689,26 @@ function bindEvents() {
   $('#manage-speakers').addEventListener('click', () => modals.openSpeakerNames());
 
   $('#item-list').addEventListener('change', (event) => {
-    const select = event.target.closest('[data-field="kind"]');
+    const field = event.target.closest('[data-field]');
     const item = event.target.closest('[data-item-id]');
-    if (!select || !item) return;
-    const [kind, characterId] = select.value.split(':');
+    if (!field || !item) return;
+    if (field.dataset.field === 'speaker') {
+      void changeSpeakerName(field, item.dataset.itemId);
+      return;
+    }
+    const [kind, characterId] = field.value.split(':');
     // 대사가 아닌 종류로 바꾸면 화자를 비운다.
     void changeLine(item.dataset.itemId, { kind, character_id: characterId || null });
+  });
+
+  $('#item-list').addEventListener('keydown', (event) => {
+    const input = event.target.closest('[data-field="speaker"]');
+    if (input && event.key === 'Enter') {
+      event.preventDefault();
+      const item = input.closest('[data-item-id]');
+      if (item) void changeSpeakerName(input, item.dataset.itemId);
+      input.blur();
+    }
   });
 
   $('#manuscript').addEventListener('click', (event) => {
