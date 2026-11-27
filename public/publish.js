@@ -76,7 +76,11 @@ function buildChecks(studio) {
   const noSpeaker = scenes.flatMap((scene) => scene.items
     .filter((i) => i.type === 'dialogue' && !studio.speakers.some((s) => s.id === i.speakerId))
     .map((item) => ({ scene, item })));
-  const noVoice = studio.characters.filter((c) => !c.voiceId);
+  // 화자를 바꾸거나 합쳐 대사가 남지 않은 인물, 제외(ignore)한 대사만 가진 인물은 음성이 필요 없다.
+  const voicedIds = new Set(scenes.flatMap((scene) => scene.items
+    .filter((i) => i.editable === 'line' && i.kind !== 'ignore')
+    .map((i) => i.characterId)));
+  const noVoice = studio.characters.filter((c) => !c.voiceId && voicedIds.has(c.id));
   const speakerIssues = [
     ...noSpeaker.map(({ scene, item }) => ({
       title: `${sceneName(scene.number)} · 화자 미지정`,

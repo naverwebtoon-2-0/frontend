@@ -5,14 +5,20 @@
 // - 일괄 재생성 확인(stale 대사)
 // - ⋯ 메뉴(음성 설정 · 원문으로 되돌리기). TTS 재생성은 수정된 대사 카드의 버튼으로만 한다.
 import {
+  characterNameKey,
+  createCharacter,
+  createDialogueLine,
   regenerateLine,
+  regenerateLines,
   regenerateStale,
+  reassignLines,
+  renameCharacterGroup,
   updateCharacterVoice,
   updateImageDescription,
   updateLine,
   updateSfxCue,
 } from './api.js';
-import { fillSlots, formatDuration } from './common.js';
+import { fillSlots } from './common.js';
 
 const SECONDS_PER_ITEM = 5; // 일괄 재생성 예상 시간(항목당). 서버 추정치가 생기면 바꾼다.
 
@@ -64,6 +70,119 @@ export function setupModals(ctx) {
 
   const subtitle = (item) => `${sceneName(state.scene.number)} · ${itemLabel(item)}`;
 
+  // ── 말풍선 텍스트 수동 추가 ──────────────────────────
+
+  const dialogueModal = $('#dialogue-modal');
+  bindSubmit(dialogueModal, async (form) => {
+    const characterName = form.elements.character.value.trim();
+    const text = form.elements.dialogue.value.trim();
+    if (!characterName) throw new Error('화자 이름을 입력해주세요.');
+    if (!text) throw new Error('말풍선 텍스트를 입력해주세요.');
+    const speakers = state.studio.characters.filter((character) => character.kind !== 'narration');
+    const existing = speakers.find((speaker) => characterNameKey(speaker.name) === characterNameKey(characterName));
+    const character = existing ?? await createCharacter(state.studio.episode.seriesId, characterName);
+    await createDialogueLine(episodeId, {
+      imageId: state.sceneId,
+      text,
+      characterId: character.id,
+    });
+    return '말풍선 대사를 추가했습니다. 음성을 생성해주세요.';
+  });
+
+  function openDialogue() {
+    const speakers = state.studio?.characters.filter((character) => character.kind !== 'narration') ?? [];
+    if (!state.sceneId) {
+      toast('먼저 장면을 선택해주세요.');
+      return;
+    }
+    fillSlots(dialogueModal, { 'dialogue-modal-sub': `${sceneName(state.scene.number)}에 새 대사를 추가합니다.` });
+    const options = dialogueModal.querySelector('#dialogue-character-options');
+    options.replaceChildren(...speakers.map((speaker) => Object.assign(document.createElement('option'), { value: speaker.name })));
+    dialogueModal.querySelector('[name="character"]').value = '';
+    dialogueModal.querySelector('[name="dialogue"]').value = '';
+    open(dialogueModal, '[name="character"]');
+  }
+
+  // ── 인물 이름 일괄 관리 ───────────────────────────────
+
+  const speakerModal = $('#speaker-modal');
+  const speakerNameList = $('#speaker-name-list');
+  bindSubmit(speakerModal, async () => {
+    const inputs = [...speakerNameList.querySelectorAll('input[data-character-id]')];
+    const names = inputs.map((input) => input.value.trim());
+    if (names.some((name) => !name)) throw new Error('모든 인물의 이름을 입력해주세요.');
+
+    // 같은 이름을 입력한 인물끼리 묶는다. 이름을 그대로 둔 인물이 있으면 그 인물이 대표가 된다.
+    const groups = new Map();
+    for (const input of inputs) {
+      const character = state.studio.characters.find((c) => c.id === input.dataset.characterId);
+      if (!character) continue;
+      const entry = { character, name: input.value.trim(), renamed: input.value.trim() !== input.dataset.previousName };
+      const key = characterNameKey(entry.name);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    }
+
+    let renamed = 0;
+    let mergedLines = 0;
+    const tasks = [];
+    for (const entries of groups.values()) {
+      const lead = entries.find((entry) => !entry.renamed) ?? entries[0];
+      if (lead.renamed) {
+        renamed += 1;
+        tasks.push(renameCharacterGroup(lead.character, lead.name));
+      }
+      for (const entry of entries.filter((candidate) => candidate !== lead)) {
+        const lineIds = state.studio.scenes.flatMap((scene) => (
+          state.studio.sceneDetails[scene.id].items
+            .filter((item) => item.editable === 'line' && item.speakerId === entry.character.id)
+            .map((item) => item.id)
+        ));
+        mergedLines += lineIds.length;
+        tasks.push(reassignLines(lineIds, lead.character.id));
+      }
+    }
+    if (!tasks.length) return '';
+    await Promise.all(tasks);
+    const messages = [];
+    if (renamed) messages.push(`${renamed}명의 인물 이름을 저장했습니다.`);
+    if (mergedLines) messages.push(`같은 이름의 인물을 합치고 대사 ${mergedLines}개의 화자를 옮겼습니다.`);
+    return messages.join(' ');
+  });
+
+  function openSpeakerNames() {
+    const speakers = state.studio.characters.filter((character) => character.kind !== 'narration');
+    if (!speakers.length) {
+      toast('수정할 인물이 없습니다.');
+      return;
+    }
+    speakerNameList.replaceChildren(...speakers.map((character, index) => {
+      const field = document.createElement('label');
+      field.className = 'speaker-name-field';
+      const label = document.createElement('span');
+      label.className = 'speaker-name-field__label';
+      label.textContent = `인물 ${index + 1}`;
+      const input = document.createElement('input');
+      input.className = 'speaker-name-field__input';
+      input.type = 'text';
+      input.maxLength = 100;
+      input.required = true;
+      input.value = character.name;
+      input.dataset.characterId = character.id;
+      input.dataset.previousName = character.name;
+      input.setAttribute('aria-label', `인물 ${index + 1} 이름`);
+      field.append(label, input);
+      if (character.autoNamed) {
+        const status = document.createElement('span');
+        status.className = 'speaker-name-field__status';
+        status.textContent = '자동 지정';
+        field.append(status);
+      }
+      return field;
+    }));
+    open(speakerModal, 'input');
+  }
+
   // ── 텍스트 수정 · 화면해설 수정 ─────────────────────────
 
   const textModal = $('#text-modal');
@@ -103,8 +222,23 @@ export function setupModals(ctx) {
     const voiceId = form.elements.voice.value;
     const speed = Number(form.elements.speed.value);
     if (voiceId === voiceTarget.voiceId && speed === voiceTarget.speed) return '';
-    await updateCharacterVoice(voiceTarget.id, { voiceId, speed });
-    return `${voiceTarget.name} 음성을 바꿨습니다. 해당 대사를 다시 생성해야 합니다.`;
+    const lineIds = state.studio.scenes.flatMap((scene) => (
+      state.studio.sceneDetails[scene.id].items
+        .filter((item) => item.editable === 'line' && item.characterId === voiceTarget.id)
+        .map((item) => item.id)
+    ));
+    // 같은 이름으로 묶인 인물 모두에 같은 목소리를 적용한다.
+    await Promise.all((voiceTarget.memberIds ?? [voiceTarget.id]).map((id) => updateCharacterVoice(id, {
+      voiceId,
+      voiceParams: { ...voiceTarget.voiceParams, speed },
+    })));
+    try {
+      await regenerateLines(episodeId, lineIds);
+    } catch (error) {
+      await reload();
+      throw new Error(`목소리는 저장했지만 음성 생성에 실패했습니다. ${error.message || ''}`.trim());
+    }
+    return `${voiceTarget.name} 목소리를 변경하고 대사 ${lineIds.length}개의 음성을 새로 만들었습니다.`;
   });
 
   /** 선택한 항목의 인물(대사는 화자, 그 밖에는 나레이터) 음성을 편집한다. */
@@ -121,7 +255,6 @@ export function setupModals(ctx) {
     fillSlots(voiceModal, {
       'voice-modal-sub': `${sceneName(state.scene.number)} · ${isNarrator ? '나레이션' : `${character.name} 대사`}`,
       'voice-modal-label': isNarrator ? '나레이터' : '화자',
-      'voice-preview': item?.durationMs ? `미리 듣기 (${formatDuration(item.durationMs / 1000)})` : '미리 듣기',
       'voice-current': '현재 음성',
     });
     const select = voiceModal.querySelector('[name="voice"]');
@@ -130,8 +263,10 @@ export function setupModals(ctx) {
     open(voiceModal, 'select');
   }
 
-  // 선택을 바꾸면 "현재 음성" 표시를 지운다.
-  voiceModal.addEventListener('change', () => fillSlots(voiceModal, { 'voice-current': '변경됨 · 적용 전' }));
+  // 선택을 바꾸면 저장 전 상태를 표시한다.
+  voiceModal.addEventListener('change', () => {
+    fillSlots(voiceModal, { 'voice-current': '변경됨 · 적용 전' });
+  });
 
   // ── 효과음 설정 ───────────────────────────────────────
 
@@ -156,11 +291,6 @@ export function setupModals(ctx) {
     volumeInput.value = item.sfx.volume;
     showVolume();
     open(sfxModal, focusVolume ? '[name="volume"]' : 'select');
-  }
-
-  // 미리 듣기: 샘플 음원(sample_url)이 아직 없다.
-  for (const button of document.querySelectorAll('[data-preview]')) {
-    button.addEventListener('click', () => toast('미리 듣기 음원이 아직 없습니다. 음원 URL이 오면 재생합니다.'));
   }
 
   // ── 일괄 재생성 ───────────────────────────────────────
@@ -294,5 +424,5 @@ export function setupModals(ctx) {
   });
   document.addEventListener('scroll', () => closeMenu(), true);
 
-  return { openText, openVoice, openSfx, openBatch, openMenu, regenerate, staleItems };
+  return { openDialogue, openSpeakerNames, openText, openVoice, openSfx, openBatch, openMenu, regenerate, staleItems };
 }

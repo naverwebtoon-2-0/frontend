@@ -266,32 +266,29 @@ const EPISODE_STATUS = {
 
 // ── A1 작가 대시보드 ───────────────────────────────────
 
-/** GET /v1/series/{id}/dashboard 응답을 작가 대시보드 화면 형태로 바꾼다. */
+/** 모든 작품의 dashboard 응답을 합쳐 작가 대시보드 화면 형태로 바꾼다. */
 export async function getDashboard() {
-  const series = await currentSeries();
+  const { items: series } = await request('/v1/series');
+  if (!series.length) throw new ApiError('등록된 작품이 없습니다.', 404, 'NO_SERIES');
   const monthParts = Object.fromEntries(
     new Intl.DateTimeFormat('en', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' })
       .formatToParts(new Date()).map((part) => [part.type, part.value]),
   );
   const month = `${monthParts.year}-${monthParts.month}`;
-  const data = await request(`/v1/series/${enc(series.id)}/dashboard?month=${enc(month)}`);
-  const episodes = data.episodes ?? [];
-  const reviewTarget = episodes.filter((e) => e.state === 'needs_review').sort((a, b) => b.number - a.number)[0];
-  const remainingSeconds = episodes
+  const dashboards = await Promise.all(series.map((item) => (
+    request(`/v1/series/${enc(item.id)}/dashboard?month=${enc(month)}`)
+  )));
+  const allEpisodes = dashboards.flatMap((data) => data.episodes ?? []);
+  const remainingSeconds = allEpisodes
     .map((e) => e.stats?.processing?.eta_seconds)
     .filter((value) => value != null)
     .reduce((sum, value) => sum + value, 0) || null;
+  const issueCounts = dashboards.map((data) => data.summary.issue_count).filter((value) => value != null);
 
-  return {
-    stats: {
-      reviewRequired: {
-        count: episodes.filter((e) => e.state === 'needs_review').length,
-        problemScenes: data.summary.issue_count,
-      },
-      processing: { count: data.summary.in_progress_count, remainingSeconds },
-      published: { count: data.summary.published_count, thisMonth: data.summary.published_this_month },
-    },
-    currentWork: {
+  const works = dashboards.map((data) => {
+    const episodes = data.episodes ?? [];
+    const reviewTarget = episodes.filter((e) => e.state === 'needs_review').sort((a, b) => b.number - a.number)[0];
+    return {
       id: data.series.id,
       title: data.series.title,
       meta: [`총 ${data.summary.episode_count}화`, `게시 ${data.summary.published_count}화`].join(' · '),
@@ -299,10 +296,9 @@ export async function getDashboard() {
         episodeId: reviewTarget.id,
         episodeNumber: reviewTarget.number,
         progress: Math.round((reviewTarget.stats?.review_progress ?? 0) * 100),
+        updatedAt: reviewTarget.updated_at,
       } : null,
-    },
-    recentEpisodes: episodes.slice(0, 3)
-      .map((e) => ({
+      recentEpisodes: episodes.slice(0, 3).map((e) => ({
         id: e.id,
         number: e.number,
         title: e.title,
@@ -310,6 +306,25 @@ export async function getDashboard() {
         durationSeconds: e.stats?.audio_duration_ms == null ? null : e.stats.audio_duration_ms / 1000,
         updatedAt: e.updated_at,
       })),
+    };
+  });
+
+  return {
+    stats: {
+      reviewRequired: {
+        count: allEpisodes.filter((e) => e.state === 'needs_review').length,
+        problemScenes: issueCounts.length ? issueCounts.reduce((sum, value) => sum + value, 0) : null,
+      },
+      processing: {
+        count: dashboards.reduce((sum, data) => sum + data.summary.in_progress_count, 0),
+        remainingSeconds,
+      },
+      published: {
+        count: dashboards.reduce((sum, data) => sum + data.summary.published_count, 0),
+        thisMonth: dashboards.reduce((sum, data) => sum + data.summary.published_this_month, 0),
+      },
+    },
+    works,
   };
 }
 
@@ -436,13 +451,69 @@ function truncate(text, max = 9) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+/** OCR이 이름을 비워 둔 인물에는 중복되지 않는 기본 이름을 붙인다. */
+function withDefaultCharacterNames(characters) {
+  const usedNames = new Set(characters.map((character) => character.name?.trim()).filter(Boolean));
+  let characterNumber = 0;
+  return characters.map((character) => {
+    const currentName = character.name?.trim();
+    if (character.kind === 'narration') {
+      if (currentName) return { ...character, name: currentName, auto_named: false };
+      usedNames.add('나레이션');
+      return { ...character, name: '나레이션', auto_named: true };
+    }
+    characterNumber += 1;
+    if (currentName) return { ...character, name: currentName, auto_named: false };
+    while (usedNames.has(`인물 ${characterNumber}`)) characterNumber += 1;
+    const name = `인물 ${characterNumber}`;
+    usedNames.add(name);
+    return { ...character, name, auto_named: true };
+  });
+}
+
+/** 인물명 비교 키. 앞뒤·중복 공백과 대소문자 차이는 같은 이름으로 본다. */
+export function characterNameKey(name) {
+  return (name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
+}
+
+/**
+ * 이름이 같은 인물(나레이션 제외)을 하나로 묶는다.
+ * 대표 인물은 목소리가 지정된 첫 인물(없으면 첫 인물)이고, 묶인 인물 id는 memberIds에 모은다.
+ * 서버에 남아 있는 같은 이름의 인물도 화면에서는 한 명으로 보이게 한다.
+ */
+function mergeSameNameCharacters(characters) {
+  const groups = new Map();
+  for (const character of characters) {
+    const key = character.kind === 'narration' ? `narration:${character.id}` : `name:${characterNameKey(character.name)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(character);
+  }
+  const canonical = new Map();
+  const merged = [];
+  for (const members of groups.values()) {
+    const lead = members.find((c) => c.voice_id) ?? members[0];
+    for (const member of members) canonical.set(member.id, lead.id);
+    merged.push({ ...lead, member_ids: members.map((c) => c.id) });
+  }
+  return { characters: merged, canonicalId: (id) => (id == null ? id : canonical.get(id) ?? id) };
+}
+
 /**
  * GET /v1/episodes/{id}/studio 응답을 스튜디오 화면 형태로 바꾼다.
  * - 장면 = 원고 이미지 한 장
  * - 항목 = 대사(lines) + 효과음 큐(sfx_cues) + 이미지 설명(alt, 화면해설)
  * - 타임라인 = 이미지 순서·대사 순서대로 음성 길이를 이어 붙인 시간축
  */
-function adaptStudio({ studio, episode, series, voices, presets }) {
+function adaptStudio({ studio: raw, episode, series, voices, presets }) {
+  const { characters: mergedCharacters, canonicalId } = mergeSameNameCharacters(raw.characters);
+  const mergedLines = raw.lines.map((l) => ({ ...l, raw_character_id: l.character_id, character_id: canonicalId(l.character_id) }));
+  const usedIds = new Set(mergedLines.map((l) => l.character_id));
+  const studio = {
+    ...raw,
+    // 다른 인물로 합쳐져 대사가 하나도 남지 않은 이름 없는 인물은 목록에서 뺀다.
+    characters: mergedCharacters.filter((c) => c.kind === 'narration' || !c.auto_named || usedIds.has(c.id)),
+    lines: mergedLines,
+  };
   const characters = new Map(studio.characters.map((c) => [c.id, c]));
   const presetName = new Map(presets.map((p) => [p.tag, p.name]));
   const voiceName = new Map(voices.map((v) => [v.id, v.name]));
@@ -463,7 +534,16 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
       const track = l.kind === 'sfx_text' ? 'sfx' : l.kind;
       const speaker = characters.get(l.character_id);
       const label = l.kind === 'dialogue' ? `${speaker?.name ?? '화자 미지정'} · ${l.text}` : l.kind === 'narration' ? `원문 · ${truncate(l.text, 12)}` : l.text;
-      clips[track]?.push({ id: `clip_${l.id}`, itemId: l.id, label, start: cursor, duration });
+      clips[track]?.push({
+        id: `clip_${l.id}`,
+        itemId: l.id,
+        label,
+        start: cursor,
+        duration,
+        kind: track,
+        audioUrl: l.audio?.url ?? null,
+        volume: 1,
+      });
       cursor += duration + CLIP_GAP;
     }
     // 효과음 큐: 큐 위치(y_ratio) 이후 첫 대사와 함께 시작
@@ -477,6 +557,9 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         label: presetName.get(cue.sfx_tag) ?? cue.sfx_tag,
         start,
         duration: (cue.duration_ms ?? DEFAULT_SFX_SECONDS * 1000) / 1000,
+        kind: 'sfx',
+        audioUrl: cue.url ?? cue.audio_url ?? null,
+        volume: cue.volume ?? 1,
       });
     }
   }
@@ -493,8 +576,11 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         editable: 'line',
         type: l.kind === 'sfx_text' ? 'sfx' : l.kind,
         kind: l.kind,
+        order: l.order,
         source: l.kind === 'sfx_text' ? 'drawn' : 'manuscript',
         speakerId: l.character_id,
+        // 서버에 실제로 연결된 인물 id. 같은 이름 인물을 합칠 때 쓴다.
+        rawCharacterId: l.raw_character_id,
         characterId: l.character_id ?? (l.kind === 'narration' ? narrator?.id : null),
         // 제안 필드: OCR 원문. 명세에 없어 없으면 null
         originalText: l.original_text ?? null,
@@ -503,6 +589,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         bbox: l.bbox,
         start: startOf.get(l.id) ?? null,
         audioStatus: l.audio?.status ?? 'none',
+        audioUrl: l.audio?.url ?? null,
         ttsStale: l.audio?.status === 'stale',
       });
       // 화면해설(이미지 설명)은 첫 나레이션 뒤에 둔다.
@@ -523,6 +610,7 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
         sfx: { tag: cue.sfx_tag, preset: presetName.get(cue.sfx_tag) ?? cue.sfx_tag, volume: Math.round((cue.volume ?? 1) * 100) },
         bbox: { x: 0.02, y: cue.y_ratio, w: 0, h: 0 },
         start: startOf.get(cue.id) ?? null,
+        audioUrl: cue.url ?? cue.audio_url ?? null,
         ttsStale: false,
       });
     }
@@ -553,7 +641,15 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
   });
 
   return {
-    episode: { id: episode.id, number: episode.number, title: episode.title, workTitle: series.title, state: episode.state, language: series.language ?? 'ko' },
+    episode: {
+      id: episode.id,
+      seriesId: episode.series_id,
+      number: episode.number,
+      title: episode.title,
+      workTitle: series.title,
+      state: episode.state,
+      language: series.language ?? 'ko',
+    },
     lastSavedAt: episode.updated_at,
     review: {
       reviewedCount: scenes.filter((s) => s.status === 'done').length,
@@ -564,11 +660,14 @@ function adaptStudio({ studio, episode, series, voices, presets }) {
     speakers: studio.characters.filter((c) => c.kind !== 'narration').map((c) => ({ id: c.id, name: c.name })),
     characters: studio.characters.map((c) => ({
       id: c.id,
+      memberIds: c.member_ids ?? [c.id],
       name: c.name,
+      autoNamed: Boolean(c.auto_named),
       kind: c.kind ?? 'character',
       voiceId: c.voice_id,
       voiceName: voiceName.get(c.voice_id) ?? c.voice_id,
       speed: c.voice_params?.speed ?? 0,
+      voiceParams: c.voice_params ?? { speed: 0, pitch: 0 },
     })),
     voices: voices.map((v) => ({ id: v.id, name: v.name, sampleUrl: v.sample_url ?? null })),
     presets: presets.map((p) => ({ tag: p.tag, name: p.name, sampleUrl: p.sample_url ?? null })),
@@ -589,7 +688,14 @@ export async function getStudio(episodeId) {
     request('/v1/sfx-presets'),
   ]);
   const series = await request(`/v1/series/${enc(episode.series_id)}`);
-  const view = adaptStudio({ studio, episode, series, voices: voices.items, presets: presets.items });
+  const characters = withDefaultCharacterNames(studio.characters);
+  const view = adaptStudio({
+    studio: { ...studio, characters },
+    episode,
+    series,
+    voices: voices.items,
+    presets: presets.items,
+  });
   studioCache.set(episodeId, view);
   return view;
 }
@@ -610,6 +716,53 @@ export async function updateLine(lineId, patch) {
   return request(`/v1/lines/${enc(lineId)}`, { method: 'PATCH', body: patch });
 }
 
+/** 여러 대사의 화자를 한 인물로 바꾼다. 같은 이름 인물을 합칠 때 쓴다. */
+export async function reassignLines(lineIds, characterId) {
+  await Promise.all(lineIds.map((lineId) => updateLine(lineId, { character_id: characterId })));
+}
+
+/** 묶인 인물(memberIds) 모두에 같은 이름을 적용한다. */
+export async function renameCharacterGroup(character, name) {
+  await Promise.all((character.memberIds ?? [character.id]).map((id) => updateCharacterName(id, name)));
+}
+
+/** 현재 장면에 말풍선 대사를 추가한다. POST /v1/episodes/{id}/lines */
+export async function createDialogueLine(episodeId, { imageId, text, characterId }) {
+  return request(`/v1/episodes/${enc(episodeId)}/lines`, {
+    method: 'POST',
+    body: {
+      image_id: imageId,
+      text,
+      kind: 'dialogue',
+      character_id: characterId,
+      emotion: 'neutral',
+    },
+    idempotent: true,
+  });
+}
+
+/** 작품에 새 인물을 추가한다. POST /v1/series/{id}/characters */
+export async function createCharacter(seriesId, name, { voiceId, voiceParams } = {}) {
+  return request(`/v1/series/${enc(seriesId)}/characters`, {
+    method: 'POST',
+    body: {
+      name,
+      kind: 'character',
+      ...(voiceId ? { voice_id: voiceId } : {}),
+      ...(voiceParams ? { voice_params: voiceParams } : {}),
+    },
+    idempotent: true,
+  });
+}
+
+/** 인물 이름 변경. PATCH /v1/characters/{id} */
+export async function updateCharacterName(characterId, name) {
+  return request(`/v1/characters/${enc(characterId)}`, {
+    method: 'PATCH',
+    body: { name },
+  });
+}
+
 /** 이미지 수정. 명세에 없는 제안 경로: PATCH /v1/episodes/{id}/images/{image_id} { reviewed, alt } */
 function updateImage(episodeId, imageId, patch) {
   return request(`/v1/episodes/${enc(episodeId)}/images/${enc(imageId)}`, { method: 'PATCH', body: patch });
@@ -628,12 +781,12 @@ export async function updateImageDescription(episodeId, imageId, alt) {
 /**
  * 인물 목소리 변경. PATCH /v1/characters/{id}
  * 그 인물의 모든 대사가 stale이 된다(명세 §6.3).
- * @param {{ voiceId: string, speed: number }} input speed는 voice_params.speed (-1·0·1로 가정)
+ * @param {{ voiceId: string, voiceParams: object }} input
  */
-export async function updateCharacterVoice(characterId, { voiceId, speed }) {
+export async function updateCharacterVoice(characterId, { voiceId, voiceParams }) {
   return request(`/v1/characters/${enc(characterId)}`, {
     method: 'PATCH',
-    body: { voice_id: voiceId, voice_params: { speed } },
+    body: { voice_id: voiceId, voice_params: voiceParams },
   });
 }
 
@@ -656,6 +809,17 @@ export async function regenerateStale(episodeId, onProgress) {
     idempotent: true,
   });
   await waitForJob(job.id, onProgress);
+}
+
+/** 지정한 대사들의 음성만 다시 만든다. POST /v1/episodes/{id}/regenerate { scope: "lines" } */
+export async function regenerateLines(episodeId, lineIds, onProgress) {
+  if (!lineIds.length) return;
+  const result = await request(`/v1/episodes/${enc(episodeId)}/regenerate`, {
+    method: 'POST',
+    body: { scope: 'lines', line_ids: lineIds },
+    idempotent: true,
+  });
+  if (result.job) await waitForJob(result.job.id, onProgress);
 }
 
 // ── A5 게시 전 확인 ──────────────────────────────────
